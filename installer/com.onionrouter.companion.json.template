@@ -1,0 +1,7 @@
+{
+  "name": "com.onionrouter.companion",
+  "description": "OnionRouter Tor management companion",
+  "path": "{{COMPANION_PATH}}",
+  "type": "stdio",
+  "allowed_extensions": ["onionrouter@louis-courrian.dev"]
+}

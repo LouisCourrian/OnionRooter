@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OnionRouter</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <span class="logo" aria-hidden="true">🧅</span>
+    <h1>OnionRouter</h1>
+  </header>
+
+  <section class="status" id="status">
+    <span class="dot" id="status-dot" aria-hidden="true"></span>
+    <span class="label" id="status-label">Inactive</span>
+  </section>
+
+  <section class="details" id="details">
+    <div class="row">
+      <span class="key">SOCKS port</span>
+      <span class="value" id="socks-port">—</span>
+    </div>
+    <div class="row" id="error-row" hidden>
+      <span class="key">Error</span>
+      <span class="value" id="error-message">—</span>
+    </div>
+  </section>
+
+  <section class="actions">
+    <button type="button" id="start-btn">Start Tor</button>
+    <button type="button" id="stop-btn">Stop Tor</button>
+  </section>
+
+  <footer>
+    <p class="phase">Phase 1 — Onion-only routing</p>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

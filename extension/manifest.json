@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "OnionRouter",
+  "version": "0.1.0",
+  "description": "Visit .onion sites in Firefox automatically — Tor is downloaded and managed transparently in the background.",
+  "default_locale": "en",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "onionrouter@louis-courrian.dev",
+      "strict_min_version": "115.0"
+    }
+  },
+
+  "permissions": [
+    "proxy",
+    "webRequest",
+    "storage",
+    "tabs",
+    "nativeMessaging"
+  ],
+
+  "host_permissions": ["<all_urls>"],
+
+  "background": {
+    "scripts": ["background.js"]
+  },
+
+  "action": {
+    "default_title": "OnionRouter",
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon-inactive.svg"
+  },
+
+  "icons": {
+    "48": "icons/icon-inactive.svg",
+    "128": "icons/icon-inactive.svg"
+  }
+}

@@ -1,0 +1,137 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #6b6b6b;
+  --border: #e2e2e2;
+  --accent: #7a3fb8;
+  --danger: #c53030;
+  --ok: #1e8a4a;
+  --warn: #c98a14;
+  --idle: #8a8a8a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1f1f23;
+    --fg: #f0f0f0;
+    --muted: #a0a0a0;
+    --border: #34343a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  width: 280px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+header .logo { font-size: 18px; }
+
+header h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.status .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--idle);
+  flex-shrink: 0;
+}
+
+.status[data-status="starting"] .dot { background: var(--warn); }
+.status[data-status="ready"] .dot    { background: var(--ok); }
+.status[data-status="error"] .dot    { background: var(--danger); }
+
+.status .label { font-weight: 500; }
+
+.details {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.details .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.details .key   { color: var(--muted); }
+.details .value { font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace; }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.actions button {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#start-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+#start-btn:hover:not(:disabled) {
+  background: #6a35a0;
+  border-color: #6a35a0;
+  color: #fff;
+}
+
+footer {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+footer .phase {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
