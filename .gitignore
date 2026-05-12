@@ -1,0 +1,46 @@
+# Rust / Cargo
+companion/target/
+companion/Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs & runtime data
+*.log
+companion/tor-data/
+companion/tor-bin/
+
+# Extension build output
+extension/web-ext-artifacts/
+extension/*.xpi
+extension/*.zip
+
+# Installer build output
+installer/build/
+installer/dist/
+
+# Local secrets / config
+*.local
+.env
+.env.*
+
+# Claude / agent artifacts (keep project settings, ignore local-only files)
+.claude/settings.local.json
+.claude/cache/
+.claude/projects/*/sessions/
