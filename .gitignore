@@ -31,9 +31,10 @@ extension/web-ext-artifacts/
 extension/*.xpi
 extension/*.zip
 
-# Installer build output
+# Installer build output (compiled installer + bundled XPI)
 installer/build/
 installer/dist/
+installer/com.onionrouter.companion.json
 
 # Local secrets / config
 *.local
