@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <title>OnionRouter — Tor active (whitelist)</title>
+  <circle cx="64" cy="64" r="56" fill="none" stroke="#d97706" stroke-width="6"/>
+  <path d="M64 28c-14 0-22 12-22 28s8 32 22 32 22-16 22-32-8-28-22-28z"
+        fill="#d97706" stroke="#d97706" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M64 36v52M52 50c0 8 0 22 12 30M76 50c0 8 0 22-12 30"
+        fill="none" stroke="#ffffff" stroke-width="3"/>
+  <!-- list badge -->
+  <rect x="86" y="18" width="28" height="22" rx="3" fill="#fff" stroke="#d97706" stroke-width="2"/>
+  <path d="M90 24h20M90 29h20M90 34h14"
+        stroke="#d97706" stroke-width="2" stroke-linecap="round"/>
+</svg>

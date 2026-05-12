@@ -9,32 +9,71 @@
   <header>
     <span class="logo" aria-hidden="true">🧅</span>
     <h1>OnionRouter</h1>
+    <span class="status-pill" id="status-pill" data-status="disconnected">Inactive</span>
   </header>
 
-  <section class="status" id="status">
-    <span class="dot" id="status-dot" aria-hidden="true"></span>
-    <span class="label" id="status-label">Inactive</span>
-  </section>
-
-  <section class="details" id="details">
+  <section class="details">
     <div class="row">
       <span class="key">SOCKS port</span>
       <span class="value" id="socks-port">—</span>
     </div>
     <div class="row" id="error-row" hidden>
       <span class="key">Error</span>
-      <span class="value" id="error-message">—</span>
+      <span class="value error" id="error-message">—</span>
     </div>
+  </section>
+
+  <section class="modes" aria-label="Routing mode">
+    <h2>Routing mode</h2>
+    <label class="mode" data-mode="onion">
+      <input type="radio" name="mode" value="onion">
+      <span class="dot" data-color="onion"></span>
+      <span class="text">
+        <strong>Onion only</strong>
+        <small>.onion → Tor • everything else direct</small>
+      </span>
+    </label>
+    <label class="mode" data-mode="all">
+      <input type="radio" name="mode" value="all">
+      <span class="dot" data-color="all"></span>
+      <span class="text">
+        <strong>All via Tor <span class="lock" title="WebRTC auto-disabled">🔒</span></strong>
+        <small>Every request goes through Tor</small>
+      </span>
+    </label>
+    <label class="mode" data-mode="whitelist">
+      <input type="radio" name="mode" value="whitelist">
+      <span class="dot" data-color="whitelist"></span>
+      <span class="text">
+        <strong>Whitelist</strong>
+        <small>Only listed domains (+ .onion) → Tor</small>
+      </span>
+    </label>
+  </section>
+
+  <section class="webrtc" id="webrtc-section">
+    <label class="toggle">
+      <input type="checkbox" id="webrtc-toggle">
+      <span>Also disable WebRTC</span>
+      <small id="webrtc-hint"></small>
+    </label>
+  </section>
+
+  <section class="whitelist" id="whitelist-section" hidden>
+    <h2>Whitelisted domains</h2>
+    <div class="whitelist-input">
+      <input type="text" id="whitelist-domain" placeholder="example.com" autocomplete="off" spellcheck="false">
+      <button type="button" id="whitelist-add">Add</button>
+    </div>
+    <button type="button" id="whitelist-add-current" class="secondary">+ Add current site</button>
+    <ul id="whitelist-list"></ul>
+    <p class="empty" id="whitelist-empty" hidden>No domains yet — add one above.</p>
   </section>
 
   <section class="actions">
     <button type="button" id="start-btn">Start Tor</button>
     <button type="button" id="stop-btn">Stop Tor</button>
   </section>
-
-  <footer>
-    <p class="phase">Phase 1 — Onion-only routing</p>
-  </footer>
 
   <script src="popup.js"></script>
 </body>

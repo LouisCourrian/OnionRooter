@@ -2,20 +2,36 @@
 //
 // Responsibilities:
 //   1. Maintain a Native Messaging connection to the Rust companion.
-//   2. Detect .onion URLs and route them through the SOCKS5 port exposed
-//      by Tor (port reported by the companion).
-//   3. Drive the toolbar icon state (gray → yellow → green).
-//
-// Phase 1 scope: "Onion only" mode hardcoded — .onion goes through Tor,
-// everything else goes direct. Modes "All via Tor" and "Whitelist" arrive
-// in Phase 3.
+//   2. Route requests through Tor according to the active mode:
+//        - "onion"     : .onion → Tor, everything else direct
+//        - "all"       : everything → Tor
+//        - "whitelist" : .onion + user-listed domains → Tor, rest direct
+//      .onion ALWAYS goes through Tor regardless of mode (per spec §4.2).
+//   3. Drive the toolbar icon: gray (idle) → yellow (starting) →
+//      green-tinted-per-mode (ready) → red (error).
+//   4. Apply WebRTC settings: forced off in "all" mode, user-controlled
+//      in "onion" / "whitelist" mode (per spec §3.2 F17/F18).
+//   5. Persist mode + whitelist + WebRTC preference in storage.local.
 
 "use strict";
 
 const COMPANION_HOST = "com.onionrouter.companion";
 
-// Centralised state. Everything that reads this object must do so through
-// `getState()` so we have one place to add observers later.
+const MODES = Object.freeze({
+  onion: "onion",
+  all: "all",
+  whitelist: "whitelist",
+});
+
+const DEFAULT_SETTINGS = Object.freeze({
+  mode: MODES.onion,
+  whitelist: [],
+  // User-toggled WebRTC kill switch for "onion"/"whitelist" modes.
+  // Ignored in "all" mode (where WebRTC is force-disabled regardless).
+  webrtcDisabled: false,
+});
+
+// Centralised state.
 const state = {
   /** "disconnected" | "starting" | "ready" | "error" */
   status: "disconnected",
@@ -23,14 +39,77 @@ const state = {
   socksPort: null,
   /** Last human-readable error, or null. */
   errorMessage: null,
+  /** Active routing mode. */
+  mode: DEFAULT_SETTINGS.mode,
+  /** Domains (without protocol/port) routed via Tor in whitelist mode. */
+  whitelist: [...DEFAULT_SETTINGS.whitelist],
+  /** User pref — only consulted outside "all" mode. */
+  webrtcDisabled: DEFAULT_SETTINGS.webrtcDisabled,
 };
 
 let companionPort = null;
-/** Resolves when the next "ready" message arrives. Reset on disconnect. */
 let readyPromise = null;
 let readyResolve = null;
 
-// ---------- Companion connection ---------------------------------------
+// ---------- Settings persistence --------------------------------------
+
+async function loadSettings() {
+  const stored = await browser.storage.local.get(["mode", "whitelist", "webrtcDisabled"]);
+  state.mode = MODES[stored.mode] || DEFAULT_SETTINGS.mode;
+  state.whitelist = Array.isArray(stored.whitelist) ? stored.whitelist.slice() : [];
+  state.webrtcDisabled = stored.webrtcDisabled === true;
+}
+
+async function saveSetting(key, value) {
+  await browser.storage.local.set({ [key]: value });
+}
+
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  let touched = false;
+  if (changes.mode) {
+    state.mode = MODES[changes.mode.newValue] || DEFAULT_SETTINGS.mode;
+    touched = true;
+  }
+  if (changes.whitelist) {
+    state.whitelist = Array.isArray(changes.whitelist.newValue) ? changes.whitelist.newValue.slice() : [];
+    touched = true;
+  }
+  if (changes.webrtcDisabled) {
+    state.webrtcDisabled = changes.webrtcDisabled.newValue === true;
+    touched = true;
+  }
+  if (touched) {
+    applyWebRTC();
+    refreshIcon();
+    broadcastToPopup();
+  }
+});
+
+// ---------- WebRTC ----------------------------------------------------
+
+/**
+ * peerConnectionEnabled = false  → WebRTC OFF (what we want for privacy)
+ * peerConnectionEnabled = true   → WebRTC ON (normal Firefox behaviour)
+ *
+ * We only call clear() when we're not active (i.e. extension disabled)
+ * because setting `false` is a controllable setting and Firefox tracks
+ * which extension owns it.
+ */
+async function applyWebRTC() {
+  const shouldDisable = state.mode === MODES.all || state.webrtcDisabled === true;
+  try {
+    if (shouldDisable) {
+      await browser.privacy.network.peerConnectionEnabled.set({ value: false });
+    } else {
+      await browser.privacy.network.peerConnectionEnabled.clear({});
+    }
+  } catch (err) {
+    console.warn("[OnionRouter] could not adjust WebRTC setting:", err && err.message);
+  }
+}
+
+// ---------- Companion connection --------------------------------------
 
 function connectCompanion() {
   if (companionPort) return;
@@ -42,14 +121,12 @@ function connectCompanion() {
     companionPort = browser.runtime.connectNative(COMPANION_HOST);
   } catch (err) {
     console.error("[OnionRouter] connectNative threw:", err);
-    setStatus("error", { errorMessage: String(err && err.message) || "connectNative failed" });
+    setStatus("error", { errorMessage: String((err && err.message)) || "connectNative failed" });
     return;
   }
 
   companionPort.onMessage.addListener(onCompanionMessage);
   companionPort.onDisconnect.addListener(onCompanionDisconnect);
-
-  // Kick the companion to launch Tor immediately.
   send({ action: "start" });
 }
 
@@ -87,7 +164,6 @@ function onCompanionMessage(msg) {
       setStatus("error", { errorMessage: msg.message || "unknown error" });
       break;
     case "pong":
-      // health check — no state change
       break;
     default:
       console.warn("[OnionRouter] unknown companion message:", msg);
@@ -108,7 +184,6 @@ function onCompanionDisconnect(port) {
   readyPromise = null;
 }
 
-/** Returns a promise that resolves with the SOCKS port once Tor is ready. */
 function waitForReady() {
   if (state.status === "ready" && state.socksPort) {
     return Promise.resolve(state.socksPort);
@@ -118,47 +193,70 @@ function waitForReady() {
       readyResolve = resolve;
     });
   }
-  // Make sure we're at least connected and asking for a start.
   if (!companionPort) connectCompanion();
   else if (state.status !== "starting" && state.status !== "ready") send({ action: "start" });
   return readyPromise;
 }
 
-// ---------- Proxy routing ---------------------------------------------
+// ---------- Routing ---------------------------------------------------
 
 function isOnion(hostname) {
   if (!hostname) return false;
-  // Strip a trailing dot from FQDN form like "example.onion."
   const h = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
   return h.toLowerCase().endsWith(".onion");
 }
 
 /**
- * proxy.onRequest handler.
- * Return a ProxyInfo (or array) — Firefox honours the first reachable one.
- * Returning `{ type: "direct" }` means "no proxy".
+ * Whitelist matches the exact domain OR any subdomain.
+ *   addDomain "example.com" matches:
+ *     - example.com
+ *     - www.example.com
+ *     - any.deeply.nested.example.com
+ *   ...but NOT "evilexample.com" (suffix-only is unsafe).
  */
-function handleProxyRequest(requestInfo) {
+function matchesWhitelist(hostname, list) {
+  if (!hostname || !list || list.length === 0) return false;
+  const h = (hostname.endsWith(".") ? hostname.slice(0, -1) : hostname).toLowerCase();
+  return list.some((entry) => {
+    if (!entry) return false;
+    const d = String(entry).toLowerCase().replace(/^\.+/, "");
+    return h === d || h.endsWith("." + d);
+  });
+}
+
+function shouldUseTor(url) {
   let host;
   try {
-    host = new URL(requestInfo.url).hostname;
+    host = new URL(url).hostname;
   } catch {
-    return { type: "direct" };
+    return false;
   }
+  // .onion is non-negotiable in every mode.
+  if (isOnion(host)) return true;
 
-  if (!isOnion(host)) return { type: "direct" };
+  switch (state.mode) {
+    case MODES.all:
+      return true;
+    case MODES.whitelist:
+      return matchesWhitelist(host, state.whitelist);
+    case MODES.onion:
+    default:
+      return false;
+  }
+}
 
-  // .onion → Tor. If Tor isn't ready yet, returning "direct" would leak
-  // a DNS lookup for a hostname that doesn't resolve. Returning an
-  // unreachable proxy makes Firefox fail the request cleanly instead.
+function handleProxyRequest(requestInfo) {
+  if (!shouldUseTor(requestInfo.url)) return { type: "direct" };
+
   const port = state.socksPort;
   if (state.status !== "ready" || !port) {
-    // Trigger a connection attempt so the next request succeeds.
+    // Spin up Tor lazily; fail this request fast with an invalid proxy
+    // so no DNS leak occurs while Tor bootstraps.
     void waitForReady();
     return {
       type: "socks",
       host: "127.0.0.1",
-      port: 1, // intentionally invalid — request fails fast, no DNS leak
+      port: 1,
       proxyDNS: true,
       failoverTimeout: 1,
     };
@@ -168,7 +266,7 @@ function handleProxyRequest(requestInfo) {
     type: "socks",
     host: "127.0.0.1",
     port,
-    proxyDNS: true, // forces DNS resolution through Tor — protects against DNS leaks
+    proxyDNS: true,
   };
 }
 
@@ -176,25 +274,40 @@ browser.proxy.onRequest.addListener(handleProxyRequest, { urls: ["<all_urls>"] }
 
 // ---------- Toolbar icon ----------------------------------------------
 
-const ICONS = {
-  disconnected: "icons/icon-inactive.svg",
-  starting: "icons/icon-starting.svg",
-  ready: "icons/icon-active-onion.svg",
-  error: "icons/icon-error.svg",
+const READY_ICON_BY_MODE = {
+  [MODES.onion]: "icons/icon-active-onion.svg",
+  [MODES.all]: "icons/icon-active-all.svg",
+  [MODES.whitelist]: "icons/icon-active-whitelist.svg",
 };
 
-function refreshIcon() {
-  browser.action.setIcon({ path: ICONS[state.status] || ICONS.disconnected });
+function iconPath() {
+  if (state.status === "ready") {
+    return READY_ICON_BY_MODE[state.mode] || READY_ICON_BY_MODE[MODES.onion];
+  }
+  if (state.status === "starting") return "icons/icon-starting.svg";
+  if (state.status === "error") return "icons/icon-error.svg";
+  return "icons/icon-inactive.svg";
+}
 
-  const title =
-    state.status === "ready"
-      ? `OnionRouter — Tor active (SOCKS port ${state.socksPort})`
-      : state.status === "starting"
-      ? "OnionRouter — starting Tor…"
-      : state.status === "error"
-      ? `OnionRouter — error: ${state.errorMessage || "unknown"}`
-      : "OnionRouter — inactive";
-  browser.action.setTitle({ title });
+function statusLabel() {
+  if (state.status === "ready") {
+    switch (state.mode) {
+      case MODES.all:
+        return `OnionRouter — Tor active (all traffic, port ${state.socksPort})`;
+      case MODES.whitelist:
+        return `OnionRouter — Tor active (whitelist, port ${state.socksPort})`;
+      default:
+        return `OnionRouter — Tor active (onion-only, port ${state.socksPort})`;
+    }
+  }
+  if (state.status === "starting") return "OnionRouter — starting Tor…";
+  if (state.status === "error") return `OnionRouter — error: ${state.errorMessage || "unknown"}`;
+  return "OnionRouter — inactive";
+}
+
+function refreshIcon() {
+  browser.action.setIcon({ path: iconPath() });
+  browser.action.setTitle({ title: statusLabel() });
 }
 
 // ---------- State plumbing --------------------------------------------
@@ -208,7 +321,14 @@ function setStatus(status, patch = {}) {
 }
 
 function getState() {
-  return { ...state };
+  return {
+    status: state.status,
+    socksPort: state.socksPort,
+    errorMessage: state.errorMessage,
+    mode: state.mode,
+    whitelist: state.whitelist.slice(),
+    webrtcDisabled: state.webrtcDisabled,
+  };
 }
 
 // ---------- Popup messaging -------------------------------------------
@@ -233,8 +353,60 @@ function broadcastToPopup() {
   }
 }
 
+// ---------- Whitelist mutation helpers --------------------------------
+
+function normalizeDomain(input) {
+  if (!input) return null;
+  let s = String(input).trim().toLowerCase();
+  if (!s) return null;
+  // Strip scheme + path if user pasted a full URL.
+  try {
+    if (s.includes("://")) s = new URL(s).hostname;
+  } catch {
+    /* keep raw input */
+  }
+  // Strip port and userinfo just in case.
+  s = s.split("/")[0].split(":")[0].replace(/^\.+/, "").replace(/\.+$/, "");
+  // Basic sanity: must contain a dot and only contain hostname-allowed chars.
+  if (!s.includes(".")) return null;
+  if (!/^[a-z0-9.-]+$/.test(s)) return null;
+  return s;
+}
+
+async function addToWhitelist(domain) {
+  const norm = normalizeDomain(domain);
+  if (!norm) return { ok: false, reason: "invalid domain" };
+  const next = state.whitelist.slice();
+  if (!next.includes(norm)) next.push(norm);
+  next.sort();
+  await saveSetting("whitelist", next);
+  return { ok: true, whitelist: next };
+}
+
+async function removeFromWhitelist(domain) {
+  const next = state.whitelist.filter((d) => d !== domain);
+  await saveSetting("whitelist", next);
+  return { ok: true, whitelist: next };
+}
+
+async function addCurrentTabToWhitelist() {
+  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  const url = tabs[0] && tabs[0].url;
+  if (!url) return { ok: false, reason: "no active tab" };
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return { ok: false, reason: "tab has no hostname" };
+  }
+  return addToWhitelist(host);
+}
+
+// ---------- Runtime message router ------------------------------------
+
 browser.runtime.onMessage.addListener((msg) => {
-  switch (msg && msg.type) {
+  if (!msg || typeof msg.type !== "string") return undefined;
+  switch (msg.type) {
     case "get-state":
       return Promise.resolve(getState());
     case "start-tor":
@@ -243,6 +415,19 @@ browser.runtime.onMessage.addListener((msg) => {
     case "stop-tor":
       send({ action: "stop" });
       return Promise.resolve(getState());
+    case "set-mode": {
+      const m = MODES[msg.mode];
+      if (!m) return Promise.resolve({ ok: false, reason: "invalid mode" });
+      return saveSetting("mode", m).then(() => ({ ok: true, mode: m }));
+    }
+    case "set-webrtc":
+      return saveSetting("webrtcDisabled", msg.value === true).then(() => ({ ok: true }));
+    case "whitelist-add":
+      return addToWhitelist(msg.domain);
+    case "whitelist-add-current":
+      return addCurrentTabToWhitelist();
+    case "whitelist-remove":
+      return removeFromWhitelist(msg.domain);
     default:
       return undefined;
   }
@@ -250,7 +435,8 @@ browser.runtime.onMessage.addListener((msg) => {
 
 // ---------- Boot -------------------------------------------------------
 
-refreshIcon();
-// Lazy connect: only spin up the companion when an .onion is actually
-// requested. Uncomment below to connect eagerly at browser start.
-// connectCompanion();
+(async () => {
+  await loadSettings();
+  await applyWebRTC();
+  refreshIcon();
+})();
