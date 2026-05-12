@@ -50,6 +50,7 @@ const state = {
 let companionPort = null;
 let readyPromise = null;
 let readyResolve = null;
+let readyReject = null;
 
 // ---------- Settings persistence --------------------------------------
 
@@ -141,6 +142,14 @@ function send(payload) {
   }
 }
 
+function settleReady(value, error) {
+  if (error && readyReject) readyReject(error);
+  else if (!error && readyResolve) readyResolve(value);
+  readyPromise = null;
+  readyResolve = null;
+  readyReject = null;
+}
+
 function onCompanionMessage(msg) {
   console.debug("[OnionRouter] ←", msg);
   switch (msg && msg.status) {
@@ -150,19 +159,20 @@ function onCompanionMessage(msg) {
     case "ready":
       if (typeof msg.port === "number") {
         setStatus("ready", { socksPort: msg.port, errorMessage: null });
-        if (readyResolve) {
-          readyResolve(msg.port);
-          readyResolve = null;
-          readyPromise = null;
-        }
+        settleReady(msg.port, null);
       }
       break;
     case "stopped":
       setStatus("disconnected", { socksPort: null });
+      // A pending waiter shouldn't hang if the user clicks Stop mid-bootstrap.
+      settleReady(null, new Error("Tor was stopped"));
       break;
-    case "error":
-      setStatus("error", { errorMessage: msg.message || "unknown error" });
+    case "error": {
+      const m = msg.message || "unknown error";
+      setStatus("error", { errorMessage: m });
+      settleReady(null, new Error(m));
       break;
+    }
     case "pong":
       break;
     default:
@@ -175,22 +185,32 @@ function onCompanionDisconnect(port) {
   if (error) {
     console.warn("[OnionRouter] companion disconnected with error:", error.message);
     setStatus("error", { errorMessage: error.message });
+    settleReady(null, new Error(error.message));
   } else {
     console.info("[OnionRouter] companion disconnected");
     setStatus("disconnected", { socksPort: null });
+    settleReady(null, new Error("companion disconnected"));
   }
   companionPort = null;
-  readyResolve = null;
-  readyPromise = null;
 }
 
+/**
+ * Returns a promise that resolves with the SOCKS port once Tor is ready,
+ * or rejects if Tor enters an error state / is stopped / the companion
+ * disconnects. Callers wanting to block a request until Tor is up should
+ * await this directly.
+ */
 function waitForReady() {
   if (state.status === "ready" && state.socksPort) {
     return Promise.resolve(state.socksPort);
   }
+  if (state.status === "error") {
+    return Promise.reject(new Error(state.errorMessage || "Tor unavailable"));
+  }
   if (!readyPromise) {
-    readyPromise = new Promise((resolve) => {
+    readyPromise = new Promise((resolve, reject) => {
       readyResolve = resolve;
+      readyReject = reject;
     });
   }
   if (!companionPort) connectCompanion();
@@ -245,29 +265,44 @@ function shouldUseTor(url) {
   }
 }
 
-function handleProxyRequest(requestInfo) {
-  if (!shouldUseTor(requestInfo.url)) return { type: "direct" };
-
-  const port = state.socksPort;
-  if (state.status !== "ready" || !port) {
-    // Spin up Tor lazily; fail this request fast with an invalid proxy
-    // so no DNS leak occurs while Tor bootstraps.
-    void waitForReady();
-    return {
-      type: "socks",
-      host: "127.0.0.1",
-      port: 1,
-      proxyDNS: true,
-      failoverTimeout: 1,
-    };
-  }
-
+function torProxyInfo(port) {
   return {
     type: "socks",
     host: "127.0.0.1",
     port,
-    proxyDNS: true,
+    proxyDNS: true, // forces DNS through Tor — prevents DNS leaks
   };
+}
+
+/** Returned when Tor failed irrecoverably and we must NOT leak the host. */
+const UNREACHABLE_PROXY = Object.freeze({
+  type: "socks",
+  host: "127.0.0.1",
+  port: 1,
+  proxyDNS: true,
+  failoverTimeout: 1,
+});
+
+/**
+ * Firefox accepts a Promise from proxy.onRequest. Resolving it pauses the
+ * request until Tor is up, which gives the user a "slow load" feel instead
+ * of an instant fail-to-load on cold start. If Tor never comes up, the
+ * promise rejects and we substitute an unreachable proxy so the .onion
+ * host name doesn't leak via direct DNS.
+ */
+function handleProxyRequest(requestInfo) {
+  if (!shouldUseTor(requestInfo.url)) return { type: "direct" };
+
+  if (state.status === "ready" && state.socksPort) {
+    return torProxyInfo(state.socksPort);
+  }
+
+  return waitForReady()
+    .then((port) => torProxyInfo(port))
+    .catch((err) => {
+      console.warn("[OnionRouter] waitForReady failed for", requestInfo.url, err);
+      return UNREACHABLE_PROXY;
+    });
 }
 
 browser.proxy.onRequest.addListener(handleProxyRequest, { urls: ["<all_urls>"] });
