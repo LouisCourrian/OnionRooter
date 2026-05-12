@@ -16,24 +16,28 @@ use tracing::{debug, error, info, warn};
 /// Pinned Tor Expert Bundle version that this companion knows how to verify.
 ///
 /// **Update protocol** when bumping:
-///   1. Download new bundles from <https://www.torproject.org/download/tor/>.
-///   2. Verify Tor Project's GPG signature on the `.sha256sum` file.
-///   3. Copy the matching SHA-256 hashes into [`KNOWN_BUNDLES`] below.
-///   4. Bump [`TOR_VERSION`] and bump the companion's own crate version.
-pub const TOR_VERSION: &str = "0.4.8.13";
+///   1. Find a new version at <https://dist.torproject.org/torbrowser/>.
+///   2. Fetch the matching `sha256sums-signed-build.txt` from that directory.
+///   3. (Recommended) Verify the file's PGP signature against the Tor Project
+///      signing key.
+///   4. Copy the hashes for the four expert-bundle archives into
+///      [`KNOWN_BUNDLES`] below.
+///   5. Bump [`BUNDLE_VERSION`] and the companion crate version.
+pub const BUNDLE_VERSION: &str = "15.0.13";
 
-/// Minimum Tor version this companion will reuse from an externally-running
-/// instance (see `tor_detector.rs`). Older versions are rejected.
+/// Minimum Tor binary version this companion will reuse from an
+/// externally-running instance (see `tor_detector.rs`). Older versions
+/// are rejected.
 pub const MIN_REUSABLE_TOR_VERSION: (u32, u32, u32, u32) = (0, 4, 7, 0);
 
-/// One bundle per supported platform. `sha256` MUST be the official hash
-/// published by The Tor Project for [`TOR_VERSION`] — placeholders below are
-/// flagged and refused at runtime until updated.
+/// One bundle per supported platform. SHA-256 hashes are the official ones
+/// published by The Tor Project at
+/// <https://dist.torproject.org/torbrowser/15.0.13/sha256sums-signed-build.txt>.
 #[derive(Debug, Clone, Copy)]
 pub struct Bundle {
     pub platform: &'static str,
     pub url: &'static str,
-    /// Hex-encoded lowercase SHA-256. Empty string = unset placeholder.
+    /// Hex-encoded lowercase SHA-256.
     pub sha256: &'static str,
     /// Relative path of the Tor executable inside the extracted archive.
     pub binary_subpath: &'static str,
@@ -42,26 +46,26 @@ pub struct Bundle {
 const KNOWN_BUNDLES: &[Bundle] = &[
     Bundle {
         platform: "windows-x86_64",
-        url: "https://archive.torproject.org/tor-package-archive/torbrowser/13.5.7/tor-expert-bundle-windows-x86_64-13.5.7.tar.gz",
-        sha256: "", // TODO: paste official SHA-256 from torproject.org/dist/torbrowser/13.5.7/sha256sums-signed-build.txt
+        url: "https://dist.torproject.org/torbrowser/15.0.13/tor-expert-bundle-windows-x86_64-15.0.13.tar.gz",
+        sha256: "50599447f20c1124ada1d212370d9a006a8ffb0ff0eabc1d4e86339501ca9734",
         binary_subpath: "tor/tor.exe",
     },
     Bundle {
         platform: "linux-x86_64",
-        url: "https://archive.torproject.org/tor-package-archive/torbrowser/13.5.7/tor-expert-bundle-linux-x86_64-13.5.7.tar.gz",
-        sha256: "", // TODO: paste official SHA-256
+        url: "https://dist.torproject.org/torbrowser/15.0.13/tor-expert-bundle-linux-x86_64-15.0.13.tar.gz",
+        sha256: "4a46209aaf37a55abd88656a3122bb04305f6cc2a0e39acef70db92485c790f9",
         binary_subpath: "tor/tor",
     },
     Bundle {
         platform: "macos-x86_64",
-        url: "https://archive.torproject.org/tor-package-archive/torbrowser/13.5.7/tor-expert-bundle-macos-x86_64-13.5.7.tar.gz",
-        sha256: "", // TODO: paste official SHA-256
+        url: "https://dist.torproject.org/torbrowser/15.0.13/tor-expert-bundle-macos-x86_64-15.0.13.tar.gz",
+        sha256: "fe0d2417e69e308a9186bea7e87f5166bc0bf9097df998ff6cd3b4dddd607ee6",
         binary_subpath: "tor/tor",
     },
     Bundle {
         platform: "macos-aarch64",
-        url: "https://archive.torproject.org/tor-package-archive/torbrowser/13.5.7/tor-expert-bundle-macos-aarch64-13.5.7.tar.gz",
-        sha256: "", // TODO: paste official SHA-256
+        url: "https://dist.torproject.org/torbrowser/15.0.13/tor-expert-bundle-macos-aarch64-15.0.13.tar.gz",
+        sha256: "03664fe91127345cab710b92ca0cd693345242438de26d9c9da16d208c7325f3",
         binary_subpath: "tor/tor",
     },
 ];
@@ -103,7 +107,7 @@ impl TorPaths {
             .ok_or_else(|| anyhow!("could not determine local data dir"))?
             .join("OnionRouter")
             .join("tor");
-        let root = base.join(TOR_VERSION);
+        let root = base.join(BUNDLE_VERSION);
         let extracted = root.join("extracted");
         let archive_name = bundle
             .url
