@@ -3,7 +3,6 @@
   "name": "OnionRouter",
   "version": "0.1.0",
   "description": "Visit .onion sites in Firefox automatically — Tor is downloaded and managed transparently in the background.",
-  "default_locale": "en",
 
   "browser_specific_settings": {
     "gecko": {
