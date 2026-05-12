@@ -22,17 +22,34 @@ use tor_manager::LaunchedTor;
 
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// Where the SOCKS port we hand to Firefox came from.
+enum Backend {
+    /// We launched this Tor ourselves; shut it down when asked.
+    Owned(LaunchedTor),
+    /// Reusing an externally-running Tor; do NOT kill it.
+    Reused { socks_port: u16 },
+}
+
+impl Backend {
+    fn socks_port(&self) -> u16 {
+        match self {
+            Backend::Owned(t) => t.socks_port,
+            Backend::Reused { socks_port } => *socks_port,
+        }
+    }
+}
+
 /// Shared mutable state across the message loop.
 #[derive(Default)]
 struct State {
-    tor: Option<LaunchedTor>,
+    backend: Option<Backend>,
 }
 
 impl State {
     fn snapshot(&self) -> OutboundMessage {
-        match &self.tor {
-            Some(t) => OutboundMessage::Ready {
-                port: t.socks_port,
+        match &self.backend {
+            Some(b) => OutboundMessage::Ready {
+                port: b.socks_port(),
             },
             None => OutboundMessage::Stopped,
         }
@@ -77,8 +94,8 @@ async fn main() -> Result<()> {
 
     // Make sure we don't leave an orphan Tor process behind.
     let mut state = state.lock().await;
-    if let Some(mut tor) = state.tor.take() {
-        info!("stopping Tor before exit");
+    if let Some(Backend::Owned(mut tor)) = state.backend.take() {
+        info!("stopping owned Tor before exit");
         tor_manager::shutdown(&mut tor).await;
     }
     Ok(())
@@ -96,33 +113,35 @@ async fn handle(state: &Arc<Mutex<State>>, msg: InboundMessage) -> OutboundMessa
 async fn start(state: &Arc<Mutex<State>>) -> OutboundMessage {
     {
         let s = state.lock().await;
-        if let Some(tor) = &s.tor {
+        if let Some(b) = &s.backend {
             return OutboundMessage::Ready {
-                port: tor.socks_port,
+                port: b.socks_port(),
             };
         }
     }
 
-    // Phase-1 strategy: always launch our own Tor. Reusing an existing
-    // instance requires the full Control Port handshake landing in Phase 2.
-    if let Some(found) = tor_detector::detect_existing().await {
-        warn!(
-            "detected existing listener on control port {} — ignoring for now \
-             (Phase 2 will verify and reuse it)",
-            found.control_port
+    // 1. Try to reuse an externally-running Tor (verified via Control Port).
+    if let Some(detected) = tor_detector::detect_existing().await {
+        info!(
+            "reusing external Tor {} on socks={} control={}",
+            detected.version, detected.socks_port, detected.control_port
         );
+        let port = detected.socks_port;
+        state.lock().await.backend = Some(Backend::Reused { socks_port: port });
+        return OutboundMessage::Ready { port };
     }
 
+    // 2. Fallback: launch our own.
     match launch_owned().await {
         Ok(launched) => {
             let port = launched.socks_port;
-            state.lock().await.tor = Some(launched);
+            state.lock().await.backend = Some(Backend::Owned(launched));
             OutboundMessage::Ready { port }
         }
         Err(e) => {
             error!("failed to start Tor: {e:#}");
             OutboundMessage::Error {
-                message: format!("{e:#}"),
+                message: friendly_error(&e),
             }
         }
     }
@@ -136,13 +155,46 @@ async fn launch_owned() -> Result<LaunchedTor> {
 
 async fn stop(state: &Arc<Mutex<State>>) -> OutboundMessage {
     let mut s = state.lock().await;
-    match s.tor.take() {
-        Some(mut tor) => {
+    match s.backend.take() {
+        Some(Backend::Owned(mut tor)) => {
             tor_manager::shutdown(&mut tor).await;
+            OutboundMessage::Stopped
+        }
+        Some(Backend::Reused { .. }) => {
+            // We don't own this Tor — just forget about it. Phase 2 §6:
+            // "ne pas couper un Tor que l'utilisateur n'a pas lancé".
+            warn!("stop requested but Tor was external — leaving it alone");
             OutboundMessage::Stopped
         }
         None => OutboundMessage::Stopped,
     }
+}
+
+/// Map low-level errors to short human-readable strings for the popup.
+fn friendly_error(e: &anyhow::Error) -> String {
+    let chain = format!("{e:#}");
+    let lower = chain.to_lowercase();
+
+    if lower.contains("no pinned sha-256") {
+        return "internal error: companion binary ships unverified Tor hashes".into();
+    }
+    if lower.contains("sha-256 mismatch") {
+        return "downloaded Tor archive failed integrity check — refusing to run it".into();
+    }
+    if lower.contains("dns error")
+        || lower.contains("connection refused")
+        || lower.contains("network is unreachable")
+        || lower.contains("connect")
+    {
+        return "could not reach torproject.org — check your internet connection".into();
+    }
+    if lower.contains("bootstrap") && lower.contains("within") {
+        return "Tor took too long to bootstrap — try again or check your network".into();
+    }
+    if lower.contains("unsupported platform") {
+        return "your OS/architecture is not yet supported".into();
+    }
+    chain
 }
 
 fn init_logging() {
