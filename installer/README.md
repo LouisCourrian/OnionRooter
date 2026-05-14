@@ -70,10 +70,24 @@ or, if you prefer PowerShell directly:
 .\installer\build.ps1
 ```
 
-This produces:
+This produces, **in a local-disk folder** (`%LOCALAPPDATA%\OnionRouter-build\`):
 
-- `installer\build\onionrouter-<ver>.xpi` — the unsigned extension package.
-- `installer\build\OnionRouter-Setup-<ver>.exe` — the installer.
+- `onionrouter-<ver>.xpi` — the unsigned extension package.
+- `OnionRouter-Setup-<ver>.exe` — the installer.
+
+> **Why not in the repo?** Build artefacts land on local `C:` (not `Z:\`
+> or any network drive) on purpose: Windows Defender and SmartScreen
+> apply much stricter heuristics to unsigned `.exe` files written to
+> SMB shares, silently blocking reads from browsers and file pickers
+> (so you can't upload them to GitHub releases, for instance). Building
+> to `%LOCALAPPDATA%` sidesteps the whole class of "file exists but
+> access denied" issues, and keeps multi-MB binaries out of git.
+
+Override the output location with `-OutputDir`:
+
+```powershell
+.\installer\build.ps1 -OutputDir D:\elsewhere
+```
 
 Flags:
 

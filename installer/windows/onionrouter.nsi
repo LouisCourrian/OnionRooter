@@ -18,6 +18,12 @@
   !error "REPO_ROOT must be defined via /DREPO_ROOT=..."
 !endif
 
+!ifndef OUTPUT_DIR
+  ; Fallback for direct `makensis` invocation outside build.ps1 — older
+  ; behaviour, kept for hand-debugging only. Prefer running build.ps1.
+  !define OUTPUT_DIR "${REPO_ROOT}\installer\build"
+!endif
+
 !define APP_NAME       "OnionRouter"
 !define COMPANY_NAME   "Louis COURRIAN"
 !define APP_URL        "https://github.com/LouisCourrian/OnionRooter"
@@ -27,7 +33,7 @@
 
 ; -------- Metadata --------
 Name        "${APP_NAME} ${APP_VERSION}"
-OutFile     "${REPO_ROOT}\installer\build\OnionRouter-Setup-${APP_VERSION}.exe"
+OutFile     "${OUTPUT_DIR}\OnionRouter-Setup-${APP_VERSION}.exe"
 Unicode     True
 SetCompressor /SOLID lzma
 
@@ -71,7 +77,7 @@ Section "Install"
 
     ; Bundled XPI (for the user to drag into Firefox)
     SetOutPath "$INSTDIR"
-    File /oname=extension.xpi "${REPO_ROOT}\installer\build\onionrouter-${APP_VERSION}.xpi"
+    File /oname=extension.xpi "${OUTPUT_DIR}\onionrouter-${APP_VERSION}.xpi"
 
     ; Write Native Messaging host manifest.
     ; JSON requires forward slashes OR escaped backslashes — we go with
