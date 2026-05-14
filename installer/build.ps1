@@ -1,35 +1,33 @@
-# OnionRouter — build pipeline (Windows)
+# OnionRouter -- build pipeline (Windows)
 #
 # Builds the Rust companion in release mode, packages the Firefox
 # extension as an .xpi, and (if NSIS is installed) produces a
 # single-file installer.
 #
-# Output goes to a LOCAL path on C: by default ($env:LOCALAPPDATA\
-# OnionRouter-build\), not into the repo. This avoids two headaches:
+# Output goes to $RepoRoot\dist\ -- next to the source code, gitignored.
 #
-#   1. Windows Defender / SmartScreen heuristics treat executables
-#      written to SMB shares as untrusted, blocking reads silently
-#      from non-Explorer apps (browsers, file pickers, etc.). Building
-#      to local disk avoids the entire class of "access denied on a
-#      file that clearly exists" issues.
-#
-#   2. Repo doesn't get polluted with multi-MB build artefacts and
-#      doesn't have to .gitignore them.
-#
-# Override via:   .\build.ps1 -OutputDir D:\some\other\path
+# ONE-TIME SETUP (per machine):
+#   Run installer\windows\setup-defender-exclusion.ps1 as administrator.
+#   This adds dist\ to Defender's exclusion list so unsigned executables
+#   built there are readable by every Windows tool (browser file pickers,
+#   PowerShell, Explorer copy, etc.). Without this, Defender's
+#   reputation-based protection blocks reads of fresh NSIS .exe files
+#   built onto SMB shares with no visible error in Protection History.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -SkipInstaller
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -DebugBuild
-#   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -OutputDir C:\Out
+#   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -OutputDir D:\elsewhere
+#   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -SkipExclusionCheck
 
 [CmdletBinding()]
 param(
     [switch] $SkipInstaller,
     [switch] $SkipCompanion,
     [switch] $DebugBuild,
-    [string] $OutputDir
+    [string] $OutputDir,
+    [switch] $SkipExclusionCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,35 +41,78 @@ $Version  = $Manifest.version
 if (-not $Version) { throw "Could not read version from $ManifestPath" }
 Write-Host "Building OnionRouter $Version" -ForegroundColor Cyan
 
-# ----- Output dir (local C: by default, override-able) -----
+# ----- Output dir (next to source by default) -----
 if (-not $OutputDir) {
-    $OutputDir = Join-Path $env:LOCALAPPDATA "OnionRouter-build"
+    $OutputDir = Join-Path $RepoRoot "dist"
 }
 if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
 }
 $OutputDir = (Resolve-Path $OutputDir).Path
+Write-Host "Output: $OutputDir" -ForegroundColor Cyan
 
-# Sanity check: warn if the user is building to a network path despite
-# the default being local. (UNC paths and drive letters from `net use`
-# both show up as PSDrive type "FileSystem" with a non-fixed root, but
-# the cleanest detection is Win32_LogicalDisk DriveType.)
-try {
-    $Root = [System.IO.Path]::GetPathRoot($OutputDir)
-    $DriveLetter = $Root.TrimEnd('\').TrimEnd(':')
-    if ($DriveLetter -and $DriveLetter.Length -eq 1) {
-        $Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${DriveLetter}:'" -ErrorAction SilentlyContinue
-        if ($Drive -and $Drive.DriveType -eq 4) {
-            Write-Warning "OutputDir is on a network drive ($Root). Windows Defender and SmartScreen may silently block reads of unsigned .exe files written there. Prefer a local drive."
+# ----- Pre-flight: Defender exclusion check -----
+# Only matters on Windows + only matters when OutputDir is on a network
+# drive (where Defender's reputation-based protection silently blocks
+# reads of fresh unsigned executables). On a regular C:\ drive Defender
+# is not a problem.
+function Test-NetworkDrive {
+    param([string] $Path)
+    try {
+        $root = [System.IO.Path]::GetPathRoot($Path)
+        if ($root.StartsWith('\\')) { return $true }
+        $letter = $root.TrimEnd('\').TrimEnd(':')
+        if ($letter -and $letter.Length -eq 1) {
+            $drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${letter}:'" -ErrorAction SilentlyContinue
+            return ($drive -and $drive.DriveType -eq 4)
         }
-    } elseif ($Root.StartsWith('\\')) {
-        Write-Warning "OutputDir is a UNC path ($Root). Same caveat -- prefer a local drive."
-    }
-} catch {
-    # Best-effort warning only; never fail the build for this.
+    } catch { }
+    return $false
 }
 
-Write-Host "Artefacts will land in: $OutputDir" -ForegroundColor Cyan
+function Test-DefenderExclusion {
+    param([string] $Path)
+    try {
+        $exclusions = (Get-MpPreference -ErrorAction Stop).ExclusionPath
+    } catch {
+        # No Defender (third-party AV) -- can't check, assume OK.
+        return $true
+    }
+    if (-not $exclusions) { return $false }
+    $target = [System.IO.Path]::GetFullPath($Path).TrimEnd('\').ToLowerInvariant()
+    foreach ($e in $exclusions) {
+        if ([string]::IsNullOrWhiteSpace($e)) { continue }
+        $excl = [System.IO.Path]::GetFullPath($e).TrimEnd('\').ToLowerInvariant()
+        if ($target -eq $excl -or $target.StartsWith($excl + '\')) {
+            return $true
+        }
+    }
+    return $false
+}
+
+if (-not $SkipExclusionCheck -and (Test-NetworkDrive -Path $OutputDir)) {
+    if (-not (Test-DefenderExclusion -Path $OutputDir)) {
+        Write-Warning @"
+OutputDir is on a network drive AND it is NOT in Defender's exclusion list.
+
+Without an exclusion, Windows Defender will silently block reads of the
+unsigned .exe installer this build produces -- you will see the file in
+Get-ChildItem but every open() will fail with Access Denied, including
+the browser file picker for GitHub releases.
+
+Fix: run this script ONCE as administrator:
+
+  installer\windows\setup-defender-exclusion.ps1
+
+Then re-run the build. Or, if you really want to ignore the warning:
+
+  build.cmd --skip-exclusion-check
+
+(Build will continue in 3 seconds...)
+"@
+        Start-Sleep -Seconds 3
+    }
+}
 
 # ----- 1. Companion ------------------------------------------------------
 if (-not $SkipCompanion) {

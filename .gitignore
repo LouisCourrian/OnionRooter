@@ -31,7 +31,8 @@ extension/web-ext-artifacts/
 extension/*.xpi
 extension/*.zip
 
-# Installer build output (compiled installer + bundled XPI)
+# Build output (compiled installer + bundled XPI + companion binary copies)
+dist/
 installer/build/
 installer/dist/
 installer/com.onionrouter.companion.json

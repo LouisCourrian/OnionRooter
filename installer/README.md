@@ -58,6 +58,35 @@ Then load the extension the same way via `about:debugging`.
   Default install path (`C:\Program Files (x86)\NSIS\`) is auto-detected.
 - PowerShell 5+ (ships with Windows 10/11).
 
+### One-time setup (Defender exclusion)
+
+If you're building **from a network share** (SMB, UNC, mapped drive),
+you MUST exclude the build output folder from Windows Defender once
+per machine. Without this, Defender's reputation-based protection
+silently blocks reads of the unsigned NSIS installer the build
+produces — `Get-ChildItem` will list the file but every `open()` call
+(browser file picker, `Copy-Item`, Explorer drag-drop) gets `Access
+Denied`, with **no visible entry in Defender's Protection History**.
+
+Run **once, as administrator**:
+
+```powershell
+.\installer\windows\setup-defender-exclusion.ps1
+```
+
+What it does:
+
+- Resolves `dist/` next to your repo on whatever drive it lives.
+- Adds that absolute path to `Get-MpPreference -ExclusionPath`.
+- Idempotent — safe to re-run; bails out with a message if already excluded.
+- Detects whether the user is admin; refuses to run otherwise.
+- Detects third-party AVs (Avast etc.) replacing Defender and tells
+  you to add the path via their UI instead.
+
+If you're building from a regular local drive (`C:\dev\OnionRouter`),
+this exclusion isn't needed — Defender doesn't apply the same
+heuristics to fresh executables on local NTFS.
+
 ### Build
 
 ```cmd
@@ -70,18 +99,12 @@ or, if you prefer PowerShell directly:
 .\installer\build.ps1
 ```
 
-This produces, **in a local-disk folder** (`%LOCALAPPDATA%\OnionRouter-build\`):
+This produces, **next to your source code in `dist/`**:
 
-- `onionrouter-<ver>.xpi` — the unsigned extension package.
-- `OnionRouter-Setup-<ver>.exe` — the installer.
+- `dist\onionrouter-<ver>.xpi` — the unsigned extension package.
+- `dist\OnionRouter-Setup-<ver>.exe` — the installer.
 
-> **Why not in the repo?** Build artefacts land on local `C:` (not `Z:\`
-> or any network drive) on purpose: Windows Defender and SmartScreen
-> apply much stricter heuristics to unsigned `.exe` files written to
-> SMB shares, silently blocking reads from browsers and file pickers
-> (so you can't upload them to GitHub releases, for instance). Building
-> to `%LOCALAPPDATA%` sidesteps the whole class of "file exists but
-> access denied" issues, and keeps multi-MB binaries out of git.
+`dist/` is gitignored.
 
 Override the output location with `-OutputDir`:
 
@@ -93,6 +116,9 @@ Flags:
 
 - `--skip-installer` — XPI only, no NSIS step.
 - `--debug` — use `cargo build` (faster) instead of `cargo build --release`.
+- `--skip-exclusion-check` — bypass the Defender exclusion pre-flight
+  warning. Use when you really know what you're doing (CI, or an AV
+  other than Defender already configured separately).
 
 ### What the installer does
 
