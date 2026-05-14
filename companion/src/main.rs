@@ -8,6 +8,13 @@
 //!                              lifecycle, drawn in the notification area.
 //!                              Started at user login via a Run registry
 //!                              key written by the installer.
+//!
+//! Subsystem note: on Windows release builds we mark the binary as the
+//! "windows" subsystem so no console window pops up when Windows spawns
+//! us (either via the Run key or via Firefox's Native Messaging). Debug
+//! builds keep the default console subsystem so `cargo run` from a
+//! terminal still shows stderr live.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod messaging;
 mod proxy;
@@ -264,17 +271,41 @@ fn friendly_error(e: &anyhow::Error) -> String {
     chain
 }
 
+/// Where the companion writes its log file. Exposed so the tray menu
+/// can open the folder in Explorer ("Open logs folder").
+pub fn log_dir_path() -> Option<std::path::PathBuf> {
+    dirs::data_local_dir().map(|d| d.join("OnionRouter").join("logs"))
+}
+
 fn init_logging() {
     let filter =
         EnvFilter::try_from_env("ONIONROUTER_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
 
-    // In Native Messaging mode stdout is the protocol channel -- logs
-    // MUST go to stderr. The tray daemon could log to a file but for
-    // now stderr is fine too (no console attached when launched via
-    // the Run key, so logs are silently dropped; debugging can be done
-    // by launching from a terminal manually).
+    // Always log to file. Without the "windows" subsystem there is no
+    // console attached when Windows spawns us via the Run key or via
+    // Firefox's Native Messaging, so stderr would just sink. A real
+    // file gives the user something to share when reporting bugs, and
+    // the tray menu has an "Open logs folder" item to surface it.
+    if let Some(dir) = log_dir_path() {
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let appender = tracing_appender::rolling::never(&dir, "companion.log");
+            if tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_writer(appender)
+                .with_ansi(false)
+                .try_init()
+                .is_ok()
+            {
+                return;
+            }
+        }
+    }
+
+    // Fallback if the log dir is unwritable (read-only home, sandbox...).
+    let fallback_filter =
+        EnvFilter::try_from_env("ONIONROUTER_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
+        .with_env_filter(fallback_filter)
         .with_writer(std::io::stderr)
         .with_ansi(false)
         .try_init();

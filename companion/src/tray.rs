@@ -88,6 +88,21 @@ pub fn run() -> Result<()> {
     })
     .context("adding GitHub menu item")?;
 
+    // "Open logs folder" runs synchronously in the Win32 callback
+    // thread -- it's just a spawn(), nothing async to coordinate, so
+    // we don't bother routing through the mpsc channel.
+    tray.add_menu_item("Open logs folder", || {
+        if let Some(dir) = crate::log_dir_path() {
+            if let Err(e) = std::process::Command::new("explorer.exe")
+                .arg(&dir)
+                .spawn()
+            {
+                tracing::warn!("could not open Explorer at {}: {e}", dir.display());
+            }
+        }
+    })
+    .context("adding logs menu item")?;
+
     let tx_q = tx.clone();
     tray.add_menu_item("Quit OnionRouter", move || {
         let _ = tx_q.send(TrayEvent::Quit);
