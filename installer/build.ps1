@@ -63,14 +63,38 @@ if (-not (Test-Path $CompanionExe)) {
 # ----- 2. XPI ------------------------------------------------------------
 Write-Host "`n[2/3] Packaging extension as XPI..." -ForegroundColor Yellow
 $XpiPath = Join-Path $OutputDir "onionrouter-$Version.xpi"
-$ZipPath = Join-Path $OutputDir "onionrouter-$Version.zip"
-Remove-Item -Force -ErrorAction SilentlyContinue $XpiPath, $ZipPath
+Remove-Item -Force -ErrorAction SilentlyContinue $XpiPath
 
-# Compress-Archive on extension/* puts files at the archive root,
-# which is exactly what Firefox expects in an XPI (manifest.json at root).
-$ExtensionFiles = Get-ChildItem -Path (Join-Path $RepoRoot "extension") -Force
-Compress-Archive -Path $ExtensionFiles.FullName -DestinationPath $ZipPath -CompressionLevel Optimal
-Move-Item -Force $ZipPath $XpiPath
+# Why we don't use Compress-Archive:
+# PowerShell's Compress-Archive on Windows writes entry paths with
+# BACKSLASHES (icons\icon-active-all.svg) which violates the ZIP spec
+# and is rejected by AMO ("Invalid file name in archive"). It also
+# breaks Firefox at install time -- the resource lookup uses forward
+# slashes, so the toolbar action can't find icons/* and renders blank.
+#
+# .NET's ZipFile API lets us control the entry names directly, so we
+# normalize every path to forward slashes before writing.
+Add-Type -AssemblyName System.IO.Compression       | Out-Null
+Add-Type -AssemblyName System.IO.Compression.FileSystem | Out-Null
+
+$ExtensionRoot = (Resolve-Path (Join-Path $RepoRoot "extension")).Path
+$Zip = [System.IO.Compression.ZipFile]::Open(
+    $XpiPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    Get-ChildItem -Path $ExtensionRoot -Recurse -File -Force | ForEach-Object {
+        $RelativePath = $_.FullName.Substring($ExtensionRoot.Length + 1)
+        $EntryName    = $RelativePath -replace '\\', '/'
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $Zip,
+            $_.FullName,
+            $EntryName,
+            [System.IO.Compression.CompressionLevel]::Optimal
+        ) | Out-Null
+    }
+} finally {
+    $Zip.Dispose()
+}
+
 Write-Host "  -> $XpiPath" -ForegroundColor Green
 
 # ----- 3. NSIS installer -------------------------------------------------
