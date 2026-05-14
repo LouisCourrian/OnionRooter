@@ -19,4 +19,10 @@ goto loop
 
 :run
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0installer\build.ps1"%ARGS%
-exit /b %errorlevel%
+set "EXITCODE=%errorlevel%"
+if not "%EXITCODE%"=="0" (
+    echo.
+    echo Build failed with exit code %EXITCODE%.
+    pause
+)
+exit /b %EXITCODE%
