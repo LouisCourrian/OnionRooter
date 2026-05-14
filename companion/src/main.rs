@@ -1,17 +1,27 @@
-//! OnionRouter companion — Firefox Native Messaging host.
+//! OnionRouter companion -- Firefox Native Messaging host + Windows
+//! system-tray daemon, same binary, two modes.
 //!
-//! Lifecycle: Firefox spawns this binary on first `connectNative` from the
-//! extension, talks to it over stdin/stdout (length-prefixed JSON), and
-//! kills it when the extension disconnects.
+//! Default (no args)         -> Native Messaging mode. Firefox spawns us,
+//!                              talks over stdin/stdout, kills us when the
+//!                              extension disconnects.
+//! `--tray` (Windows only)   -> Tray daemon. Long-lived, owns Tor's
+//!                              lifecycle, drawn in the notification area.
+//!                              Started at user login via a Run registry
+//!                              key written by the installer.
 
 mod messaging;
 mod proxy;
+mod runtime;
 mod tor_detector;
 mod tor_manager;
+
+#[cfg(windows)]
+mod tray;
 
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::io::{stdin, stdout};
+use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tracing::{error, info, warn};
@@ -21,12 +31,14 @@ use messaging::{InboundMessage, OutboundMessage};
 use tor_manager::LaunchedTor;
 
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(90);
+const NATIVE_MESSAGING_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Where the SOCKS port we hand to Firefox came from.
 enum Backend {
-    /// We launched this Tor ourselves; shut it down when asked.
+    /// We launched this Tor ourselves; shut it down when the NM session ends.
     Owned(LaunchedTor),
-    /// Reusing an externally-running Tor; do NOT kill it.
+    /// Reusing a Tor owned by another process (Tor Browser, system Tor,
+    /// our own tray daemon...). Do NOT kill it on Stop.
     Reused { socks_port: u16 },
 }
 
@@ -39,7 +51,6 @@ impl Backend {
     }
 }
 
-/// Shared mutable state across the message loop.
 #[derive(Default)]
 struct State {
     backend: Option<Backend>,
@@ -56,11 +67,35 @@ impl State {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     init_logging();
-    info!("OnionRouter companion v{} starting", env!("CARGO_PKG_VERSION"));
 
+    // Mode dispatch based on argv. Keep this BEFORE the tokio runtime
+    // because the tray needs its own runtime setup (custom shutdown).
+    let args: Vec<String> = std::env::args().collect();
+
+    #[cfg(windows)]
+    if args.iter().any(|a| a == "--tray") {
+        info!(
+            "OnionRouter companion v{} starting in tray mode",
+            env!("CARGO_PKG_VERSION")
+        );
+        return tray::run();
+    }
+
+    info!(
+        "OnionRouter companion v{} starting in native-messaging mode",
+        env!("CARGO_PKG_VERSION")
+    );
+
+    // Native Messaging mode -- async event loop.
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(run_native_messaging())
+}
+
+async fn run_native_messaging() -> Result<()> {
     let state: Arc<Mutex<State>> = Arc::default();
     let mut stdin = stdin();
     let mut stdout = stdout();
@@ -69,7 +104,7 @@ async fn main() -> Result<()> {
         let msg = match messaging::read_message(&mut stdin).await {
             Ok(Some(m)) => m,
             Ok(None) => {
-                info!("Firefox closed the channel — shutting down");
+                info!("Firefox closed the channel -- shutting down");
                 break;
             }
             Err(e) => {
@@ -120,7 +155,35 @@ async fn start(state: &Arc<Mutex<State>>) -> OutboundMessage {
         }
     }
 
-    // 1. Try to reuse an externally-running Tor (verified via Control Port).
+    // 1. Tray-published runtime file -- if the OnionRouter tray daemon
+    //    is running, it tells us exactly which port to use, no probing
+    //    needed. Best-effort: ignored if the file is stale.
+    if let Some(rt) = runtime::read() {
+        if runtime::is_tray_alive(rt.tray_pid) {
+            if tcp_alive(rt.socks_port).await {
+                info!(
+                    "found tray-published Tor on socks={} control={} (pid {})",
+                    rt.socks_port, rt.control_port, rt.tray_pid
+                );
+                state.lock().await.backend = Some(Backend::Reused {
+                    socks_port: rt.socks_port,
+                });
+                return OutboundMessage::Ready {
+                    port: rt.socks_port,
+                };
+            } else {
+                warn!("tray runtime file points at port {} but nothing is listening", rt.socks_port);
+            }
+        } else {
+            warn!(
+                "tray runtime file references dead pid {} -- ignoring",
+                rt.tray_pid
+            );
+        }
+    }
+
+    // 2. Probe the well-known pairs (system Tor on 9050/9051, Tor Browser
+    //    on 9150/9151) with full Control Port verification. Phase 2.
     if let Some(detected) = tor_detector::detect_existing().await {
         info!(
             "reusing external Tor {} on socks={} control={}",
@@ -131,7 +194,7 @@ async fn start(state: &Arc<Mutex<State>>) -> OutboundMessage {
         return OutboundMessage::Ready { port };
     }
 
-    // 2. Fallback: launch our own.
+    // 3. Fallback: launch our own.
     match launch_owned().await {
         Ok(launched) => {
             let port = launched.socks_port;
@@ -145,6 +208,13 @@ async fn start(state: &Arc<Mutex<State>>) -> OutboundMessage {
             }
         }
     }
+}
+
+async fn tcp_alive(port: u16) -> bool {
+    matches!(
+        tokio::time::timeout(NATIVE_MESSAGING_PROBE_TIMEOUT, TcpStream::connect(("127.0.0.1", port))).await,
+        Ok(Ok(_))
+    )
 }
 
 async fn launch_owned() -> Result<LaunchedTor> {
@@ -161,16 +231,13 @@ async fn stop(state: &Arc<Mutex<State>>) -> OutboundMessage {
             OutboundMessage::Stopped
         }
         Some(Backend::Reused { .. }) => {
-            // We don't own this Tor — just forget about it. Phase 2 §6:
-            // "ne pas couper un Tor que l'utilisateur n'a pas lancé".
-            warn!("stop requested but Tor was external — leaving it alone");
+            warn!("stop requested but Tor was external -- leaving it alone");
             OutboundMessage::Stopped
         }
         None => OutboundMessage::Stopped,
     }
 }
 
-/// Map low-level errors to short human-readable strings for the popup.
 fn friendly_error(e: &anyhow::Error) -> String {
     let chain = format!("{e:#}");
     let lower = chain.to_lowercase();
@@ -179,17 +246,17 @@ fn friendly_error(e: &anyhow::Error) -> String {
         return "internal error: companion binary ships unverified Tor hashes".into();
     }
     if lower.contains("sha-256 mismatch") {
-        return "downloaded Tor archive failed integrity check — refusing to run it".into();
+        return "downloaded Tor archive failed integrity check -- refusing to run it".into();
     }
     if lower.contains("dns error")
         || lower.contains("connection refused")
         || lower.contains("network is unreachable")
         || lower.contains("connect")
     {
-        return "could not reach torproject.org — check your internet connection".into();
+        return "could not reach torproject.org -- check your internet connection".into();
     }
     if lower.contains("bootstrap") && lower.contains("within") {
-        return "Tor took too long to bootstrap — try again or check your network".into();
+        return "Tor took too long to bootstrap -- try again or check your network".into();
     }
     if lower.contains("unsupported platform") {
         return "your OS/architecture is not yet supported".into();
@@ -198,8 +265,14 @@ fn friendly_error(e: &anyhow::Error) -> String {
 }
 
 fn init_logging() {
-    // Native Messaging hijacks stdout, so logs MUST go to stderr / file only.
-    let filter = EnvFilter::try_from_env("ONIONROUTER_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter =
+        EnvFilter::try_from_env("ONIONROUTER_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
+
+    // In Native Messaging mode stdout is the protocol channel -- logs
+    // MUST go to stderr. The tray daemon could log to a file but for
+    // now stderr is fine too (no console attached when launched via
+    // the Run key, so logs are silently dropped; debugging can be done
+    // by launching from a terminal manually).
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)

@@ -30,6 +30,8 @@
 !define EXT_ID         "onionrouter@louis-courrian.dev"
 !define NATIVE_HOST    "com.onionrouter.companion"
 !define UNINST_KEY     "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
+!define RUN_KEY        "Software\Microsoft\Windows\CurrentVersion\Run"
+!define RUN_VALUE      "OnionRouter"
 
 ; -------- Metadata --------
 Name        "${APP_NAME} ${APP_VERSION}"
@@ -57,9 +59,12 @@ ShowUnInstDetails show
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_TEXT "Companion installed.$\r$\n$\r$\nNext step: install the Firefox extension. Open Firefox and drag$\r$\n  $INSTDIR\extension.xpi$\r$\ninto a browser window. (If Firefox refuses an unsigned XPI, see the README.)"
+!define MUI_FINISHPAGE_TEXT "Companion installed. The system-tray app is now running -- look for the purple onion icon in the notification area (bottom-right of your screen).$\r$\n$\r$\nNext step: install the Firefox extension. Open Firefox and drag$\r$\n  $INSTDIR\extension.xpi$\r$\ninto a browser window."
 !define MUI_FINISHPAGE_LINK "Open install folder"
 !define MUI_FINISHPAGE_LINK_LOCATION "$INSTDIR"
+!define MUI_FINISHPAGE_RUN '"$INSTDIR\bin\onionrouter-companion.exe"'
+!define MUI_FINISHPAGE_RUN_PARAMETERS "--tray"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch OnionRouter tray now"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -70,6 +75,12 @@ ShowUnInstDetails show
 ; -------- Install --------
 Section "Install"
     SetOverwrite on
+
+    ; Kill any previous tray instance so File overwrite doesn't fail
+    ; with sharing-violation when upgrading. taskkill returns non-zero
+    ; if no such process exists -- that's fine, swallow the result.
+    nsExec::Exec 'taskkill /F /IM onionrouter-companion.exe'
+    Pop $0
 
     ; Companion binary
     SetOutPath "$INSTDIR\bin"
@@ -116,25 +127,39 @@ Section "Install"
 
     WriteUninstaller "$INSTDIR\uninstall.exe"
 
+    ; Auto-start the tray at every user login. Per-user (HKCU), no
+    ; admin needed. The quoted argument list survives spaces in INSTDIR.
+    WriteRegStr HKCU "${RUN_KEY}" "${RUN_VALUE}" '"$INSTDIR\bin\onionrouter-companion.exe" --tray'
+
     DetailPrint "Installed companion at $INSTDIR\bin\onionrouter-companion.exe"
     DetailPrint "Registered Native Messaging host ${NATIVE_HOST}"
+    DetailPrint "Registered auto-start: ${RUN_KEY}\${RUN_VALUE}"
 SectionEnd
 
 ; -------- Uninstall --------
 Section "Uninstall"
+    ; Kill any running tray instance so its file handle releases the
+    ; .exe we are about to delete. taskkill returns non-zero if the
+    ; process wasn't running, which is fine -- swallow with no /B and
+    ; /F to force termination.
+    nsExec::Exec 'taskkill /F /IM onionrouter-companion.exe'
+    Pop $0  ; discard the result
+
     ; Unregister from Firefox FIRST so a half-removed state doesn't leave
     ; a dangling registry pointer to a missing manifest.
-    DeleteRegKey HKCU "Software\Mozilla\NativeMessagingHosts\${NATIVE_HOST}"
-    DeleteRegKey HKCU "Software\${APP_NAME}"
-    DeleteRegKey HKCU "${UNINST_KEY}"
+    DeleteRegKey   HKCU "Software\Mozilla\NativeMessagingHosts\${NATIVE_HOST}"
+    DeleteRegKey   HKCU "Software\${APP_NAME}"
+    DeleteRegKey   HKCU "${UNINST_KEY}"
+    DeleteRegValue HKCU "${RUN_KEY}" "${RUN_VALUE}"
 
     Delete "$INSTDIR\bin\onionrouter-companion.exe"
     RMDir  "$INSTDIR\bin"
     Delete "$INSTDIR\${NATIVE_HOST}.json"
     Delete "$INSTDIR\extension.xpi"
 
-    ; Tor download cache and runtime state.
+    ; Tor download cache + tray runtime state file.
     RMDir /r "$INSTDIR\tor"
+    RMDir /r "$INSTDIR\runtime"
 
     Delete "$INSTDIR\uninstall.exe"
     RMDir  "$INSTDIR"

@@ -1,6 +1,6 @@
 [package]
 name = "onionrouter-companion"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "Native Messaging companion for the OnionRouter Firefox extension"
 license = "MIT"
@@ -28,7 +28,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winbase", "processthreadsapi"] }
+winapi = { version = "0.3", features = ["winbase", "processthreadsapi", "handleapi", "winnt"] }
+tray-item = "0.10"
+webbrowser = "1"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+ico = "0.4"
 
 [profile.release]
 opt-level = "z"
