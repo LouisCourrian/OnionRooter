@@ -20,7 +20,7 @@
 
 !define APP_NAME       "OnionRouter"
 !define COMPANY_NAME   "Louis COURRIAN"
-!define APP_URL        "https://github.com/louis-courrian/onionrouter"
+!define APP_URL        "https://github.com/LouisCourrian/OnionRooter"
 !define EXT_ID         "onionrouter@louis-courrian.dev"
 !define NATIVE_HOST    "com.onionrouter.companion"
 !define UNINST_KEY     "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"

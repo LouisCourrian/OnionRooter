@@ -1,12 +1,15 @@
 # OnionRouter
 
-> Extension Firefox + compagnon Rust qui route automatiquement les `.onion` via Tor, sans aucune configuration manuelle.
+> Visit `.onion` sites in Firefox without installing Tor Browser. A Rust companion downloads, SHA-256-verifies and runs the official Tor in the background; the extension handles routing, DNS leaks and WebRTC.
 
-## Statut
+## Status
 
-🚧 En développement — Phase 1 (MVP).
+🚧 **MVP** — Phases 1–3 implemented and validated end-to-end (.onion routing,
+three modes, whitelist, WebRTC handling, external-Tor reuse via Control Port).
+Phase 4 in progress: native Windows installer is done, AMO-signed XPI is the
+next step. Not yet on addons.mozilla.org.
 
-Voir [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md) pour la spécification complète.
+See [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md) for the full specification (French).
 
 ## Structure du monorepo
 
