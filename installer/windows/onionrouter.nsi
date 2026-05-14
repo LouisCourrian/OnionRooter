@@ -62,7 +62,10 @@ ShowUnInstDetails show
 !define MUI_FINISHPAGE_TEXT "Companion installed. The system-tray app is now running -- look for the purple onion icon in the notification area (bottom-right of your screen).$\r$\n$\r$\nNext step: install the Firefox extension. Open Firefox and drag$\r$\n  $INSTDIR\extension.xpi$\r$\ninto a browser window."
 !define MUI_FINISHPAGE_LINK "Open install folder"
 !define MUI_FINISHPAGE_LINK_LOCATION "$INSTDIR"
-!define MUI_FINISHPAGE_RUN '"$INSTDIR\bin\onionrouter-companion.exe"'
+; MUI wraps this path in its own quotes when composing Exec internally,
+; so we MUST pass the bare path -- adding our own quotes here produces
+; an unparseable Exec call ("Exec expects 1 parameters, got 3").
+!define MUI_FINISHPAGE_RUN "$INSTDIR\bin\onionrouter-companion.exe"
 !define MUI_FINISHPAGE_RUN_PARAMETERS "--tray"
 !define MUI_FINISHPAGE_RUN_TEXT "Launch OnionRouter tray now"
 !insertmacro MUI_PAGE_FINISH
