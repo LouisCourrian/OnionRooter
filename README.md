@@ -47,6 +47,15 @@ Charger temporairement dans Firefox :
 - **Phase 3 — Modes avancés** : « Tout via Tor », whitelist, persistance, WebRTC
 - **Phase 4 — Distribution** : installeurs natifs, publication AMO
 
-## Licence
+## Contributing
 
-À définir.
+This is a personal project — **pull requests are not accepted at this time**.
+
+That said, feedback is very welcome: please open an [issue](https://github.com/LouisCourrian/OnionRooter/issues)
+for bug reports, feature suggestions, or security concerns. Security-sensitive
+reports should ideally be filed privately via GitHub's "Report a vulnerability"
+flow once the repo's security policy is set up.
+
+## License
+
+[MIT](LICENSE) © Louis COURRIAN.

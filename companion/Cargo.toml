@@ -3,7 +3,8 @@ name = "onionrouter-companion"
 version = "0.1.0"
 edition = "2021"
 description = "Native Messaging companion for the OnionRouter Firefox extension"
-license = "MIT OR Apache-2.0"
+license = "MIT"
+authors = ["Louis COURRIAN <louis.courrian@gmail.com>"]
 repository = "https://github.com/LouisCourrian/OnionRooter"
 
 [[bin]]
