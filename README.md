@@ -1,5 +1,9 @@
 # OnionRouter
 
+[![CI](https://github.com/LouisCourrian/OnionRooter/actions/workflows/ci.yml/badge.svg)](https://github.com/LouisCourrian/OnionRooter/actions/workflows/ci.yml)
+[![Release](https://github.com/LouisCourrian/OnionRooter/actions/workflows/release.yml/badge.svg)](https://github.com/LouisCourrian/OnionRooter/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > Visit `.onion` sites in Firefox without installing Tor Browser. A Rust companion downloads, SHA-256-verifies and runs the official Tor in the background; the extension handles routing, DNS leaks and WebRTC.
 
 ## Status

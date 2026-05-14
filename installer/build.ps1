@@ -6,28 +6,22 @@
 #
 # Output goes to $RepoRoot\dist\ -- next to the source code, gitignored.
 #
-# ONE-TIME SETUP (per machine):
-#   Run installer\windows\setup-defender-exclusion.ps1 as administrator.
-#   This adds dist\ to Defender's exclusion list so unsigned executables
-#   built there are readable by every Windows tool (browser file pickers,
-#   PowerShell, Explorer copy, etc.). Without this, Defender's
-#   reputation-based protection blocks reads of fresh NSIS .exe files
-#   built onto SMB shares with no visible error in Protection History.
+# This script runs in CI (Windows runner) and locally. On a local
+# Windows machine, clone the repo to a local drive (NOT a network
+# share) to avoid Defender heuristics on unsigned executables.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -SkipInstaller
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -DebugBuild
 #   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -OutputDir D:\elsewhere
-#   powershell -ExecutionPolicy Bypass -File installer\build.ps1 -SkipExclusionCheck
 
 [CmdletBinding()]
 param(
     [switch] $SkipInstaller,
     [switch] $SkipCompanion,
     [switch] $DebugBuild,
-    [string] $OutputDir,
-    [switch] $SkipExclusionCheck
+    [string] $OutputDir
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,69 +44,6 @@ if (-not (Test-Path $OutputDir)) {
 }
 $OutputDir = (Resolve-Path $OutputDir).Path
 Write-Host "Output: $OutputDir" -ForegroundColor Cyan
-
-# ----- Pre-flight: Defender exclusion check -----
-# Only matters on Windows + only matters when OutputDir is on a network
-# drive (where Defender's reputation-based protection silently blocks
-# reads of fresh unsigned executables). On a regular C:\ drive Defender
-# is not a problem.
-function Test-NetworkDrive {
-    param([string] $Path)
-    try {
-        $root = [System.IO.Path]::GetPathRoot($Path)
-        if ($root.StartsWith('\\')) { return $true }
-        $letter = $root.TrimEnd('\').TrimEnd(':')
-        if ($letter -and $letter.Length -eq 1) {
-            $drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${letter}:'" -ErrorAction SilentlyContinue
-            return ($drive -and $drive.DriveType -eq 4)
-        }
-    } catch { }
-    return $false
-}
-
-function Test-DefenderExclusion {
-    param([string] $Path)
-    try {
-        $exclusions = (Get-MpPreference -ErrorAction Stop).ExclusionPath
-    } catch {
-        # No Defender (third-party AV) -- can't check, assume OK.
-        return $true
-    }
-    if (-not $exclusions) { return $false }
-    $target = [System.IO.Path]::GetFullPath($Path).TrimEnd('\').ToLowerInvariant()
-    foreach ($e in $exclusions) {
-        if ([string]::IsNullOrWhiteSpace($e)) { continue }
-        $excl = [System.IO.Path]::GetFullPath($e).TrimEnd('\').ToLowerInvariant()
-        if ($target -eq $excl -or $target.StartsWith($excl + '\')) {
-            return $true
-        }
-    }
-    return $false
-}
-
-if (-not $SkipExclusionCheck -and (Test-NetworkDrive -Path $OutputDir)) {
-    if (-not (Test-DefenderExclusion -Path $OutputDir)) {
-        Write-Warning @"
-OutputDir is on a network drive AND it is NOT in Defender's exclusion list.
-
-Without an exclusion, Windows Defender will silently block reads of the
-unsigned .exe installer this build produces -- you will see the file in
-Get-ChildItem but every open() will fail with Access Denied, including
-the browser file picker for GitHub releases.
-
-Fix: run this script ONCE as administrator:
-
-  installer\windows\setup-defender-exclusion.ps1
-
-Then re-run the build. Or, if you really want to ignore the warning:
-
-  build.cmd --skip-exclusion-check
-
-(Build will continue in 3 seconds...)
-"@
-        Start-Sleep -Seconds 3
-    }
-}
 
 # ----- 1. Companion ------------------------------------------------------
 if (-not $SkipCompanion) {

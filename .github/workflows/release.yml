@@ -1,0 +1,106 @@
+name: Release
+
+# Push a v* tag (e.g. v0.1.0, v0.1.0-rc1) to trigger a build that
+# publishes a GitHub Release with the XPI + Windows installer attached.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # required to create a release
+
+jobs:
+  build:
+    name: Build & publish (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            companion/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('companion/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run companion tests
+        run: cargo test --manifest-path companion/Cargo.toml --release
+        shell: pwsh
+
+      - name: Install NSIS
+        # windows-latest ships with Chocolatey pre-installed.
+        run: choco install nsis -y --no-progress
+        shell: pwsh
+
+      - name: Build XPI + installer
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File installer\build.ps1
+        shell: pwsh
+
+      - name: Read version from manifest
+        id: meta
+        run: |
+          $manifest = Get-Content extension\manifest.json -Raw | ConvertFrom-Json
+          $version  = $manifest.version
+          "version=$version"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "xpi=dist/onionrouter-$version.xpi" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "exe=dist/OnionRouter-Setup-$version.exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Version $version"
+        shell: pwsh
+
+      - name: Generate SHA-256 checksums
+        run: |
+          $xpi = "${{ steps.meta.outputs.xpi }}"
+          $exe = "${{ steps.meta.outputs.exe }}"
+          $sums = @()
+          foreach ($f in @($xpi, $exe)) {
+            $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+            $name = Split-Path $f -Leaf
+            $sums += "$h  $name"
+          }
+          $sums -join "`n" | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
+          Get-Content dist/SHA256SUMS.txt
+        shell: pwsh
+
+      - name: Sanity check tag matches manifest version
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          $ver = "${{ steps.meta.outputs.version }}"
+          if ($tag -ne $ver -and -not $tag.StartsWith("$ver-")) {
+            Write-Error "Tag '${{ github.ref_name }}' does not match manifest version '$ver'."
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Detect prerelease
+        id: prerelease
+        run: |
+          $tag = "${{ github.ref_name }}"
+          # Anything with a dash (-alpha, -rc1, -beta) OR a v0.* tag is a prerelease.
+          if ($tag -match '-' -or $tag -match '^v0\.') {
+            "is_prerelease=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            "is_prerelease=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+        shell: pwsh
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          generate_release_notes: true
+          files: |
+            ${{ steps.meta.outputs.xpi }}
+            ${{ steps.meta.outputs.exe }}
+            dist/SHA256SUMS.txt

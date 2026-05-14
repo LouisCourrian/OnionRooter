@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  companion:
+    name: Rust companion (check + test)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            companion/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('companion/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo check
+        run: cargo check --manifest-path companion/Cargo.toml
+
+      - name: cargo test
+        run: cargo test --manifest-path companion/Cargo.toml
+
+  extension:
+    name: Extension (manifest + JS syntax)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate manifest JSON
+        run: python -m json.tool extension/manifest.json > /dev/null
+
+      - name: Validate Native Messaging host JSON template
+        run: |
+          # The template has a {{COMPANION_PATH}} placeholder; replace
+          # it with a stub so the JSON parses cleanly.
+          sed 's|{{COMPANION_PATH}}|/tmp/stub|' \
+              installer/com.onionrouter.companion.json.template \
+            | python -m json.tool > /dev/null
+
+      - name: Check background.js syntax
+        run: node --check extension/background.js
+
+      - name: Check popup.js syntax
+        run: node --check extension/popup.js
+
+  windows-companion:
+    name: Rust companion (Windows build)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            companion/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('companion/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo check (Windows target)
+        # The companion has windows-only dependencies (winapi, creation_flags
+        # on tokio::process::Command) -- make sure they still compile on
+        # every push.
+        run: cargo check --manifest-path companion/Cargo.toml
+        shell: pwsh

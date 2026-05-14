@@ -1,44 +1,68 @@
 # Installer & distribution
 
-Two distinct flows are documented here:
+Two flows are documented here:
 
-- **Development setup** — load the extension as a temporary add-on,
-  register the companion via PowerShell, iterate fast.
-- **Distribution build** — produce a single-file `.exe` installer
-  that drops the companion + bundled `.xpi` on an end user's machine
-  and registers the Native Messaging host.
+- **Automated release via GitHub Actions** (recommended) — push a `v*`
+  tag, CI builds and publishes the release for you.
+- **Local build** — for iteration, manual testing, or one-off
+  experiments.
 
 ## Layout
 
 ```
 installer/
 ├── build.ps1                                      Orchestrator: companion + XPI + NSIS
-├── build/                                         (gitignored) build artefacts
-│   ├── onionrouter-<ver>.xpi
-│   └── OnionRouter-Setup-<ver>.exe
 ├── com.onionrouter.companion.json.template        Native Messaging host template
 ├── windows/
 │   ├── onionrouter.nsi                            NSIS script (driven by build.ps1)
 │   └── register-dev.ps1                           Dev-only HKCU registration
 ├── linux/
 │   └── register-dev.sh                            Dev-only ~/.mozilla registration
-└── macos/                                          (Phase 4 — TBD)
+└── macos/                                          (Phase 4 -- TBD)
+
+.github/workflows/
+├── release.yml                                    Triggered on v* tags
+└── ci.yml                                         Triggered on push / PR
 ```
+
+## Automated release (recommended)
+
+```cmd
+cd <repo>
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+This triggers `.github/workflows/release.yml` on a Windows runner. It:
+
+1. Checks out the tagged commit.
+2. Installs Rust + NSIS.
+3. Runs the test suite (`cargo test`).
+4. Builds the companion in release mode.
+5. Packages the extension as `onionrouter-<ver>.xpi`.
+6. Builds `OnionRouter-Setup-<ver>.exe`.
+7. Computes SHA-256 sums for both artefacts.
+8. Creates a GitHub Release pre-populated with the artefacts and
+   auto-generated changelog notes since the previous tag.
+
+No local build required. No Defender shenanigans. Reproducible.
 
 ## Development setup (Windows)
 
+For iterating on the extension or companion before tagging a release.
+
 ```cmd
-cd Z:\programmation\OnionRooter\companion
+cd companion
 cargo build
 cd ..
 powershell -ExecutionPolicy Bypass -File installer\windows\register-dev.ps1
 ```
 
-Then in Firefox: `about:debugging#/runtime/this-firefox` → **Load Temporary
-Add-on** → pick `extension/manifest.json`.
+Then in Firefox: `about:debugging#/runtime/this-firefox` -> **Load
+Temporary Add-on** -> pick `extension/manifest.json`.
 
-The temporary add-on disappears at Firefox restart — that's expected for
-the dev flow.
+The temporary add-on disappears at Firefox restart -- that's expected
+for the dev flow.
 
 ## Development setup (Linux)
 
@@ -49,43 +73,22 @@ cd companion && cargo build && cd ..
 
 Then load the extension the same way via `about:debugging`.
 
-## Building the distribution installer (Windows)
+## Local distribution build (Windows)
+
+> Prefer the GitHub Actions flow above. Build locally only when you
+> need to test the installer behaviour itself or work offline.
 
 ### Prerequisites
 
 - Rust toolchain (`cargo`, `rustup`).
-- NSIS 3.x — download from <https://nsis.sourceforge.io/Download>.
+- NSIS 3.x -- download from <https://nsis.sourceforge.io/Download>.
   Default install path (`C:\Program Files (x86)\NSIS\`) is auto-detected.
 - PowerShell 5+ (ships with Windows 10/11).
-
-### One-time setup (Defender exclusion)
-
-If you're building **from a network share** (SMB, UNC, mapped drive),
-you MUST exclude the build output folder from Windows Defender once
-per machine. Without this, Defender's reputation-based protection
-silently blocks reads of the unsigned NSIS installer the build
-produces — `Get-ChildItem` will list the file but every `open()` call
-(browser file picker, `Copy-Item`, Explorer drag-drop) gets `Access
-Denied`, with **no visible entry in Defender's Protection History**.
-
-Run **once, as administrator**:
-
-```powershell
-.\installer\windows\setup-defender-exclusion.ps1
-```
-
-What it does:
-
-- Resolves `dist/` next to your repo on whatever drive it lives.
-- Adds that absolute path to `Get-MpPreference -ExclusionPath`.
-- Idempotent — safe to re-run; bails out with a message if already excluded.
-- Detects whether the user is admin; refuses to run otherwise.
-- Detects third-party AVs (Avast etc.) replacing Defender and tells
-  you to add the path via their UI instead.
-
-If you're building from a regular local drive (`C:\dev\OnionRouter`),
-this exclusion isn't needed — Defender doesn't apply the same
-heuristics to fresh executables on local NTFS.
+- **Clone the repo to a local drive** (not a SMB share / mapped network
+  drive). Windows Defender's reputation-based protection silently blocks
+  reads of unsigned executables freshly created on network drives, even
+  for the file picker that uploads them to GitHub. Local NTFS sidesteps
+  this. CI is unaffected (the runners have no such constraint).
 
 ### Build
 
@@ -93,38 +96,30 @@ heuristics to fresh executables on local NTFS.
 build.cmd
 ```
 
-or, if you prefer PowerShell directly:
+or, in PowerShell:
 
 ```powershell
 .\installer\build.ps1
 ```
 
-This produces, **next to your source code in `dist/`**:
+Produces, in `dist/`:
 
-- `dist\onionrouter-<ver>.xpi` — the unsigned extension package.
-- `dist\OnionRouter-Setup-<ver>.exe` — the installer.
+- `onionrouter-<ver>.xpi`
+- `OnionRouter-Setup-<ver>.exe`
 
 `dist/` is gitignored.
 
-Override the output location with `-OutputDir`:
-
-```powershell
-.\installer\build.ps1 -OutputDir D:\elsewhere
-```
-
 Flags:
 
-- `--skip-installer` — XPI only, no NSIS step.
-- `--debug` — use `cargo build` (faster) instead of `cargo build --release`.
-- `--skip-exclusion-check` — bypass the Defender exclusion pre-flight
-  warning. Use when you really know what you're doing (CI, or an AV
-  other than Defender already configured separately).
+- `--skip-installer` -- XPI only, no NSIS step.
+- `--debug` -- use `cargo build` (faster) instead of `cargo build --release`.
+- `-OutputDir <path>` -- override the output location.
 
 ### What the installer does
 
 When the end user runs `OnionRouter-Setup-<ver>.exe`:
 
-1. Per-user install — no admin prompt, files go under
+1. Per-user install -- no admin prompt, files go under
    `%LOCALAPPDATA%\OnionRouter\`.
 2. Drops `bin\onionrouter-companion.exe`.
 3. Generates `com.onionrouter.companion.json` with the absolute path to
@@ -147,7 +142,7 @@ Two distribution paths:
 ### A. Listed on addons.mozilla.org (recommended for public release)
 
 1. Create an AMO developer account at <https://addons.mozilla.org/developers/>.
-2. **Submit a New Add-on** → upload `installer\build\onionrouter-<ver>.xpi`.
+2. **Submit a New Add-on** -- upload `dist\onionrouter-<ver>.xpi`.
 3. Choose **"On this site"** distribution.
 4. Fill in the listing (description, screenshots, support URLs).
 5. AMO automatic + human review (hours to days for a first listing).
@@ -159,13 +154,12 @@ Two distribution paths:
 For niche / pre-release builds you want to control yourself:
 
 1. AMO developer account, same as above.
-2. **Submit a New Add-on** → upload the `.xpi`.
+2. **Submit a New Add-on** -- upload the `.xpi`.
 3. Choose **"On your own"** distribution.
 4. AMO signs automatically (no human review for self-distributed).
 5. Download the signed `.xpi`.
-6. Drop it into `installer\build\` overwriting the unsigned one, and
-   rebuild the installer (`build.cmd`) so the bundled XPI is the
-   signed version.
+6. Drop it into `dist\` overwriting the unsigned one, and re-trigger
+   the release workflow so the bundled XPI is the signed version.
 7. Ship the installer wherever (your site, GitHub Releases, etc).
 
 ### Automating the sign step
@@ -176,21 +170,21 @@ given AMO API credentials:
 ```bash
 npx web-ext sign \
   --source-dir=extension \
-  --artifacts-dir=installer/build \
+  --artifacts-dir=dist \
   --channel=unlisted \
   --api-key=user:XXXX \
   --api-secret=YYYY
 ```
 
 API keys come from <https://addons.mozilla.org/developers/addon/api/key/>.
-This step would slot into `build.ps1` as a `-Sign` switch — left as
-Phase 4 follow-up to keep credentials out of the default flow.
+This step would slot into the release workflow as a job step gated on
+secrets being configured -- left as a Phase 4 follow-up.
 
 ## Uninstall
 
 Two ways:
 
-- **Settings → Apps → OnionRouter → Uninstall** (Windows GUI).
+- **Settings -> Apps -> OnionRouter -> Uninstall** (Windows GUI).
 - `%LOCALAPPDATA%\OnionRouter\uninstall.exe` (or `/S` for silent).
 
 Both remove the binary, manifest, HKCU registry entries, and the Tor
@@ -198,5 +192,5 @@ download cache (`%LOCALAPPDATA%\OnionRouter\tor\`).
 
 ## Linux / macOS distribution
 
-Not in this sprint — planned for the next Phase 4 batch (`.deb` for
+Not in this sprint -- planned for the next Phase 4 batch (`.deb` for
 Debian/Ubuntu, `.pkg` for macOS).
