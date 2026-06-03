@@ -42,6 +42,13 @@ installer/com.onionrouter.companion.json
 .env
 .env.*
 
+# GPG signing keys -- NEVER commit a private key. Only the public key
+# docs/onionrouter-signing-key.asc is meant to be tracked (force-add it).
+*-private.asc
+*-secret*.asc
+*.gpg
+*.key
+
 # Claude / agent artifacts (keep project settings, ignore local-only files)
 .claude/settings.local.json
 .claude/cache/
