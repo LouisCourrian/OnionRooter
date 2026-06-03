@@ -214,7 +214,20 @@ Le paquet installe:
 Le paquet Debian n'installe pas l'extension Firefox. Elle doit etre installee
 separement via AMO ou une XPI signee.
 
-### 6.4 macOS
+### 6.4 Signature des artefacts
+
+Statut: infrastructure prete, cle a fournir.
+
+Les artefacts de release (installeur Windows via `SHA256SUMS.txt`, paquet
+Debian) sont signes avec une cle GPG du projet quand les secrets
+`GPG_SIGNING_KEY` et `GPG_SIGNING_PASSPHRASE` sont configures. En leur absence,
+la CI ignore la signature sans echouer.
+
+La signature couvre la provenance du companion et de l'installeur, que le sceau
+AMO de la XPI ne couvre pas. Voir `docs/TECHNICAL.md` pour la generation de la
+cle et la verification.
+
+### 6.5 macOS
 
 Statut: non fait.
 

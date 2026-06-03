@@ -208,6 +208,56 @@ git push origin v0.2.2
 Le workflow refuse un tag qui ne correspond pas a la version du manifest, sauf
 suffixe de prerelease (`v0.2.2-rc1`).
 
+## Signature des releases
+
+Les artefacts de release peuvent etre signes avec une cle GPG. La signature
+prouve la provenance et l'integrite des binaires; le sceau AMO ne couvre que la
+XPI, pas le companion ni l'installeur.
+
+La signature est optionnelle dans la CI: si les secrets ne sont pas configures,
+les etapes de signature sont ignorees et le build reste vert.
+
+Secrets GitHub attendus:
+
+- `GPG_SIGNING_KEY`: cle privee GPG au format ASCII-armored.
+- `GPG_SIGNING_PASSPHRASE`: passphrase de la cle (vide si la cle n'en a pas).
+
+Artefacts signes:
+
+- Windows: `SHA256SUMS.txt.asc` (signature detachee des sommes XPI + EXE).
+- Debian: `onionrouter-companion_<version>_amd64.deb.asc` (signature detachee
+  du paquet).
+
+Generer la cle de signature (une seule fois):
+
+```bash
+gpg --full-generate-key            # cle RSA 4096, sans expiration ou a renouveler
+gpg --list-secret-keys --keyid-format=long
+# Exporter la cle privee pour le secret GitHub:
+gpg --armor --export-secret-keys <KEYID> > onionrouter-signing-private.asc
+# Exporter la cle publique a publier dans le depot:
+gpg --armor --export <KEYID> > docs/onionrouter-signing-key.asc
+```
+
+Ajouter ensuite `onionrouter-signing-private.asc` comme secret
+`GPG_SIGNING_KEY` (et la passphrase comme `GPG_SIGNING_PASSPHRASE`), puis
+committer uniquement la cle publique `docs/onionrouter-signing-key.asc`.
+
+Verifier une release (cote utilisateur):
+
+```bash
+# Importer la cle publique du projet une fois:
+gpg --import docs/onionrouter-signing-key.asc
+
+# Windows:
+gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt        # ou Get-FileHash sous Windows
+
+# Debian:
+gpg --verify onionrouter-companion_0.2.2_amd64.deb.asc \
+            onionrouter-companion_0.2.2_amd64.deb
+```
+
 ## Validation locale
 
 Rust:

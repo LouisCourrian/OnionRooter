@@ -14,6 +14,11 @@ jobs:
   build:
     name: Build & publish (Windows)
     runs-on: windows-latest
+    env:
+      # Optional GPG signing key (ASCII-armored private key) + its passphrase.
+      # When absent, the signing step is skipped and the build still succeeds.
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
 
     steps:
       - name: Checkout
@@ -71,6 +76,16 @@ jobs:
           Get-Content dist/SHA256SUMS.txt
         shell: pwsh
 
+      - name: Sign checksums with GPG
+        # Skipped automatically when GPG_SIGNING_KEY is not configured.
+        if: env.GPG_PRIVATE_KEY != ''
+        run: |
+          $env:GPG_PRIVATE_KEY | gpg --batch --import
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" `
+            --armor --detach-sign --output dist/SHA256SUMS.txt.asc dist/SHA256SUMS.txt
+          gpg --verify dist/SHA256SUMS.txt.asc dist/SHA256SUMS.txt
+        shell: pwsh
+
       - name: Sanity check tag matches manifest version
         run: |
           $tag = "${{ github.ref_name }}".TrimStart('v')
@@ -104,11 +119,16 @@ jobs:
             ${{ steps.meta.outputs.xpi }}
             ${{ steps.meta.outputs.exe }}
             dist/SHA256SUMS.txt
+            dist/SHA256SUMS.txt.asc
 
   linux-deb:
     name: Build Debian package
     needs: build
     runs-on: ubuntu-22.04
+    env:
+      # Same optional GPG key as the Windows job; skipped when unset.
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
 
     steps:
       - name: Checkout
@@ -146,6 +166,16 @@ jobs:
           sha256sum "$(basename "${{ steps.meta.outputs.deb }}")" > "$(basename "${{ steps.meta.outputs.deb }}").sha256"
           cat "$(basename "${{ steps.meta.outputs.deb }}").sha256"
 
+      - name: Sign Debian package with GPG
+        # Skipped automatically when GPG_SIGNING_KEY is not configured.
+        if: env.GPG_PRIVATE_KEY != ''
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          deb="${{ steps.meta.outputs.deb }}"
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+            --armor --detach-sign --output "$deb.asc" "$deb"
+          gpg --verify "$deb.asc" "$deb"
+
       - name: Sanity check tag matches manifest version
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -174,3 +204,4 @@ jobs:
           files: |
             ${{ steps.meta.outputs.deb }}
             ${{ steps.meta.outputs.deb }}.sha256
+            ${{ steps.meta.outputs.deb }}.asc
