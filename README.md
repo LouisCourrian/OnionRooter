@@ -4,62 +4,102 @@
 [![Release](https://github.com/LouisCourrian/OnionRooter/actions/workflows/release.yml/badge.svg)](https://github.com/LouisCourrian/OnionRooter/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> Visit `.onion` sites in Firefox without installing Tor Browser. A Rust companion downloads, SHA-256-verifies and runs the official Tor in the background; the extension handles routing, DNS leaks and WebRTC.
+Visit `.onion` sites in Firefox without installing Tor Browser. A Rust Native
+Messaging companion downloads, SHA-256-verifies, launches, and reuses Tor; the
+Firefox extension handles routing, DNS leak prevention, modes, whitelist, and
+WebRTC settings.
 
 ## Status
 
-🚧 **MVP** — Phases 1–3 implemented and validated end-to-end (.onion routing,
-three modes, whitelist, WebRTC handling, external-Tor reuse via Control Port).
-Phase 4 in progress: native Windows installer is done, AMO-signed XPI is the
-next step. Not yet on addons.mozilla.org.
+Version: `0.2.2`.
 
-See [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md) for the full specification (French).
+Phases 1-3 are implemented and validated end-to-end:
 
-## Structure du monorepo
+- `.onion` routing through Tor.
+- Three modes: onion-only, all traffic, whitelist.
+- Whitelist persistence and "add current site".
+- WebRTC handling.
+- External Tor reuse through Control Port verification.
+- Windows tray companion.
 
-```
+Phase 4 is in progress:
+
+- Windows installer: implemented.
+- Debian/Ubuntu companion package: implemented for `amd64`.
+- AMO-signed XPI: available outside this repo for now.
+- macOS package and diagnostic page: still pending.
+
+See [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md) for the functional scope and
+[docs/TECHNICAL.md](docs/TECHNICAL.md) for the technical architecture.
+
+## Monorepo structure
+
+```text
 onionrouter/
-├── companion/      Compagnon Rust (Native Messaging, gestion de Tor)
-├── extension/      Extension Firefox (Manifest V3)
-├── installer/      Installeurs Windows / Linux / macOS
-├── docs/           Documentation technique
-└── CAHIER_DES_CHARGES.md
+|-- companion/      Rust companion: Native Messaging, Tor management
+|-- extension/      Firefox extension: Manifest V3
+|-- installer/      Windows and Linux packaging
+|-- docs/           Technical documentation
+`-- CAHIER_DES_CHARGES.md
 ```
 
-## Développement
+## Development
 
-### Compagnon Rust
+### Rust companion
 
 ```powershell
 cd companion
 cargo build
-cargo run
+cargo test
 ```
 
-### Extension Firefox
+### Firefox extension
 
-Charger temporairement dans Firefox :
+Load temporarily in Firefox:
 
-1. Ouvrir `about:debugging#/runtime/this-firefox`
-2. Cliquer sur « Charger un module complémentaire temporaire »
-3. Sélectionner `extension/manifest.json`
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click "Load Temporary Add-on".
+3. Select `extension/manifest.json`.
 
-## Phases
+### Windows dev registration
 
-- **Phase 1 — MVP** : Native Messaging + téléchargement Tor + détection `.onion` + routage SOCKS5
-- **Phase 2 — Robustesse** : détection de Tor existant via Control Port, gestion des erreurs
-- **Phase 3 — Modes avancés** : « Tout via Tor », whitelist, persistance, WebRTC
-- **Phase 4 — Distribution** : installeurs natifs, publication AMO
+```powershell
+cargo build --manifest-path companion\Cargo.toml
+powershell -ExecutionPolicy Bypass -File installer\windows\register-dev.ps1
+```
+
+### Linux dev registration
+
+```bash
+cargo build --manifest-path companion/Cargo.toml
+./installer/linux/register-dev.sh
+```
+
+## Packaging
+
+Windows:
+
+```powershell
+.\installer\build.ps1
+```
+
+Debian/Ubuntu:
+
+```bash
+bash installer/linux/build-deb.sh
+```
+
+Release builds are handled by `.github/workflows/release.yml` when pushing a
+`v*` tag.
 
 ## Contributing
 
-This is a personal project — **pull requests are not accepted at this time**.
+This is a personal project; pull requests are not accepted at this time.
 
-That said, feedback is very welcome: please open an [issue](https://github.com/LouisCourrian/OnionRooter/issues)
-for bug reports, feature suggestions, or security concerns. Security-sensitive
-reports should ideally be filed privately via GitHub's "Report a vulnerability"
-flow once the repo's security policy is set up.
+Feedback is welcome through GitHub issues. Security-sensitive reports should be
+filed privately through GitHub's vulnerability reporting flow once the security
+policy is configured.
 
 ## License
 
-[MIT](LICENSE) © Louis COURRIAN.
+[MIT](LICENSE) (c) Louis COURRIAN.

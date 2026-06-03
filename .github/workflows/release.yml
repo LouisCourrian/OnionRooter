@@ -1,7 +1,7 @@
 name: Release
 
-# Push a v* tag (e.g. v0.1.0, v0.1.0-rc1) to trigger a build that
-# publishes a GitHub Release with the XPI + Windows installer attached.
+# Push a v* tag (e.g. v0.2.2, v0.2.2-rc1) to trigger builds that
+# publish a GitHub Release with the XPI, Windows installer, and Debian package.
 on:
   push:
     tags:
@@ -104,3 +104,73 @@ jobs:
             ${{ steps.meta.outputs.xpi }}
             ${{ steps.meta.outputs.exe }}
             dist/SHA256SUMS.txt
+
+  linux-deb:
+    name: Build Debian package
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            companion/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('companion/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Debian package
+        run: bash installer/linux/build-deb.sh
+
+      - name: Read package metadata
+        id: meta
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])')"
+          deb="dist/onionrouter-companion_${version}_amd64.deb"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "deb=$deb" >> "$GITHUB_OUTPUT"
+          echo "Version $version"
+
+      - name: Generate Debian SHA-256 checksum
+        run: |
+          cd dist
+          sha256sum "$(basename "${{ steps.meta.outputs.deb }}")" > "$(basename "${{ steps.meta.outputs.deb }}").sha256"
+          cat "$(basename "${{ steps.meta.outputs.deb }}").sha256"
+
+      - name: Sanity check tag matches manifest version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver="${{ steps.meta.outputs.version }}"
+          if [[ "$tag" != "$ver" && "$tag" != "$ver"-* ]]; then
+            echo "Tag '$GITHUB_REF_NAME' does not match manifest version '$ver'." >&2
+            exit 1
+          fi
+
+      - name: Detect prerelease
+        id: prerelease
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [[ "$tag" == *-* || "$tag" == v0.* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          files: |
+            ${{ steps.meta.outputs.deb }}
+            ${{ steps.meta.outputs.deb }}.sha256

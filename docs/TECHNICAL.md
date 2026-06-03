@@ -1,0 +1,244 @@
+# Documentation technique - OnionRouter
+
+## Vue d'ensemble
+
+OnionRouter permet a une extension Firefox de router le trafic `.onion` via
+Tor sans demander a l'utilisateur d'installer Tor Browser.
+
+Le projet est compose de trois blocs:
+
+- `extension/`: extension Firefox Manifest V3.
+- `companion/`: companion Rust expose en Native Messaging.
+- `installer/`: packaging Windows, Linux et scripts de developpement.
+
+L'extension ne lance pas Tor directement. Elle demande au companion Rust de
+demarrer, detecter ou reutiliser un backend Tor, puis configure le proxy
+Firefox requete par requete via `browser.proxy.onRequest`.
+
+## Flux principal
+
+1. Firefox charge l'extension.
+2. L'utilisateur visite une URL ou active un mode qui necessite Tor.
+3. `background.js` ouvre une connexion Native Messaging vers
+   `com.onionrouter.companion`.
+4. Le companion cherche un Tor utilisable:
+   - runtime publie par le tray Windows;
+   - instance externe sur `9050/9051` ou `9150/9151`;
+   - lancement d'un Tor embarque telecharge et verifie.
+5. Le companion repond avec le port SOCKS.
+6. L'extension route le trafic via `127.0.0.1:<port>` avec `proxyDNS: true`.
+
+## Extension Firefox
+
+Fichiers principaux:
+
+- `extension/manifest.json`: permissions, ID Gecko, popup, background.
+- `extension/background.js`: routage, Native Messaging, WebRTC, stockage.
+- `extension/popup.html`, `popup.css`, `popup.js`: interface utilisateur.
+
+Permissions utilisees:
+
+- `proxy`: routage par requete.
+- `nativeMessaging`: communication avec le companion.
+- `storage`: persistance du mode, whitelist et preference WebRTC.
+- `privacy`: activation/desactivation de WebRTC.
+- `tabs`: ajout du site courant a la whitelist.
+- `webRequest` et `<all_urls>`: surface de routage Firefox.
+
+Modes de routage:
+
+- `onion`: seules les URLs `.onion` passent par Tor.
+- `all`: toutes les requetes passent par Tor.
+- `whitelist`: `.onion` plus les domaines autorises passent par Tor.
+
+Les domaines `.onion` passent toujours par Tor, quel que soit le mode. En cas
+d'erreur de demarrage Tor pour une URL qui doit passer par Tor, l'extension
+renvoie un proxy local impossible (`127.0.0.1:1`) afin d'eviter une fuite DNS
+ou un fallback direct.
+
+## Companion Rust
+
+Fichiers principaux:
+
+- `main.rs`: entree, mode Native Messaging et dispatch Windows tray.
+- `messaging.rs`: framing Native Messaging Mozilla.
+- `tor_manager.rs`: telechargement, verification, extraction, lancement Tor.
+- `tor_detector.rs`: verification d'une instance Tor externe.
+- `proxy.rs`: allocation de ports SOCKS/Control.
+- `runtime.rs`: fichier d'etat partage entre le tray et Native Messaging.
+- `tray.rs`: daemon tray Windows.
+
+Le binaire a deux modes:
+
+- sans argument: Native Messaging, lance par Firefox.
+- `--tray`: daemon Windows long-lived, lance au login par l'installeur.
+
+## Protocole Native Messaging
+
+Chaque message suit le framing Mozilla:
+
+```text
+[4 octets little-endian: taille JSON][payload JSON UTF-8]
+```
+
+Messages extension vers companion:
+
+```json
+{ "action": "start" }
+{ "action": "stop" }
+{ "action": "status" }
+{ "action": "ping" }
+```
+
+Messages companion vers extension:
+
+```json
+{ "status": "ready", "port": 9050 }
+{ "status": "stopped" }
+{ "status": "error", "message": "..." }
+{ "status": "pong" }
+```
+
+`starting` existe dans le type Rust, mais le flux actuel ne l'emet pas encore
+depuis le companion. L'extension gere deja cet etat cote UI.
+
+## Gestion de Tor
+
+La version du Tor Expert Bundle est pinnee dans `tor_manager.rs`:
+
+- `BUNDLE_VERSION`
+- URL officielle Tor Project par plateforme.
+- SHA-256 officiel par archive.
+- chemin relatif du binaire Tor dans l'archive.
+
+Plateformes actuellement connues:
+
+- Windows x86_64.
+- Linux x86_64.
+- macOS x86_64.
+- macOS aarch64.
+
+La cible Linux `.deb` est limitee a `amd64`, car le bundle Linux connu est
+`linux-x86_64`.
+
+Stockage Tor:
+
+- Windows: `%LOCALAPPDATA%\OnionRouter\tor\`
+- Linux: `~/.local/share/OnionRouter/tor/` ou equivalent `dirs`
+- macOS: repertoire local data retourne par `dirs`
+
+Le companion refuse d'executer une archive si le SHA-256 ne correspond pas.
+
+## Detection d'un Tor existant
+
+Avant de lancer son propre Tor, le companion sonde:
+
+- `9050/9051`: Tor systeme.
+- `9150/9151`: Tor Browser.
+
+La detection ne se limite pas a un port ouvert. Elle verifie le Control Port:
+
+1. `PROTOCOLINFO 1`.
+2. Authentification `NULL` ou `COOKIE`.
+3. `GETINFO version`.
+4. Version minimale `0.4.7.0`.
+
+`SAFECOOKIE` et `HASHEDPASSWORD` sont detectes mais non reutilises pour le
+moment. Le companion lance alors son propre Tor.
+
+## Fichier runtime du tray
+
+Le tray Windows peut lancer Tor sur un port libre non standard. Pour que les
+instances Native Messaging retrouvent ce Tor, `runtime.rs` publie:
+
+```json
+{
+  "socks_port": 12345,
+  "control_port": 12346,
+  "tray_pid": 9999,
+  "bundle_version": "15.0.13"
+}
+```
+
+Emplacement: repertoire local data `OnionRouter/runtime/state.json`.
+
+## Packaging
+
+### Windows
+
+`installer/build.ps1` construit:
+
+- le companion Rust;
+- le XPI depuis `extension/`;
+- l'installeur NSIS.
+
+Le workflow GitHub `release.yml` installe NSIS sur `windows-latest`, construit
+l'installeur, calcule les SHA-256 et publie les assets sur une release GitHub.
+
+### Debian/Ubuntu
+
+`installer/linux/build-deb.sh` construit:
+
+- `dist/onionrouter-companion_<version>_amd64.deb`
+
+Le paquet installe:
+
+- `/usr/lib/onionrouter/onionrouter-companion`
+- `/usr/lib/mozilla/native-messaging-hosts/com.onionrouter.companion.json`
+- documentation sous `/usr/share/doc/onionrouter-companion/`
+
+Il n'installe pas l'extension Firefox. L'extension doit rester distribuee via
+AMO ou via une XPI signee.
+
+## Release
+
+La version est synchronisee manuellement dans:
+
+- `extension/manifest.json`
+- `companion/Cargo.toml`
+- `companion/Cargo.lock`
+
+Pour publier:
+
+```bash
+git tag v0.2.2
+git push origin v0.2.2
+```
+
+Le workflow refuse un tag qui ne correspond pas a la version du manifest, sauf
+suffixe de prerelease (`v0.2.2-rc1`).
+
+## Validation locale
+
+Rust:
+
+```powershell
+cargo test --manifest-path companion\Cargo.toml
+```
+
+Extension:
+
+```powershell
+python -m json.tool extension\manifest.json
+node --check extension\background.js
+node --check extension\popup.js
+```
+
+Debian package, sur Linux:
+
+```bash
+python3 --version
+bash installer/linux/build-deb.sh
+dpkg-deb --info dist/onionrouter-companion_0.2.2_amd64.deb
+dpkg-deb --contents dist/onionrouter-companion_0.2.2_amd64.deb
+```
+
+## Limites connues
+
+- Le `.deb` ne couvre que `amd64`.
+- Le tray est Windows uniquement.
+- La page diagnostic n'est pas encore implementee.
+- La mise a jour automatique du bundle Tor n'est pas encore implementee.
+- Les methodes Control Port `SAFECOOKIE` et `HASHEDPASSWORD` ne sont pas encore
+  prises en charge pour la reutilisation d'un Tor externe.
+- Le packaging macOS n'est pas encore implemente.

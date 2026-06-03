@@ -65,6 +65,17 @@ jobs:
       - name: Check popup.js syntax
         run: node --check extension/popup.js
 
+  packaging:
+    name: Packaging scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Debian package script syntax
+        run: bash -n installer/linux/build-deb.sh
+
   windows-companion:
     name: Rust companion (Windows build)
     runs-on: windows-latest

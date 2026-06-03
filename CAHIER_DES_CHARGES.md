@@ -1,375 +1,288 @@
-# Cahier des charges — OnionRouter
+# Cahier des charges - OnionRouter
 
-**Extension Firefox + Compagnon Rust avec gestion automatique de Tor**
+Extension Firefox + companion Rust pour utiliser Tor depuis Firefox sans
+installer Tor Browser.
 
----
+Version de travail: `0.2.2`.
 
-## 1. Présentation du projet
+## 1. Objectif
 
-### Contexte
+OnionRouter permet a un utilisateur Firefox de visiter des sites `.onion` en
+routeant automatiquement le trafic concerne via Tor.
 
-L'objectif est de créer un outil permettant à n'importe quel utilisateur de Firefox de visiter des sites en `.onion` (réseau Tor) sans avoir à installer manuellement le Navigateur Tor ni configurer quoi que ce soit.
+Le projet ne cherche pas a remplacer Tor Browser. Il fournit un chemin simple
+pour les usages ou l'utilisateur veut rester dans Firefox tout en evitant la
+configuration manuelle de Tor.
 
-### Inspiration
+## 2. Composants
 
-Le projet s'appuie sur les principes de **tornion** (bibliothèque Python) : télécharger automatiquement le binaire officiel de Tor, vérifier son intégrité, et le gérer de façon transparente — mais cette fois au service d'un navigateur grand public.
+```text
+Firefox extension
+  - detection des URLs et domaines a router
+  - configuration proxy Firefox
+  - popup utilisateur
+  - protection WebRTC
 
-### Résumé en une phrase
+Rust companion
+  - Native Messaging
+  - telechargement et verification du Tor Expert Bundle
+  - lancement de Tor
+  - reutilisation d'un Tor existant si verifie
 
-> Une extension Firefox qui détecte les adresses `.onion` et les route automatiquement via Tor, grâce à un petit programme compagnon écrit en Rust qui gère tout en arrière-plan.
-
----
-
-## 2. Composants du projet
-
-Le projet se décompose en **trois parties** distinctes :
-
-```
-┌─────────────────────────┐      Native Messaging      ┌──────────────────────────┐
-│   Extension Firefox     │ ◄─────────────────────── ► │  Compagnon Rust (.exe)   │
-│  (détection .onion,     │                             │  (gestion Tor, proxy,    │
-│   gestion du proxy)     │                             │   téléchargement auto)   │
-└─────────────────────────┘                             └──────────────────────────┘
-                                                                    │
-                                                                    ▼
-                                                         ┌──────────────────────┐
-                                                         │   Binaire Tor        │
-                                                         │  (téléchargé auto    │
-                                                         │   depuis torproject) │
-                                                         └──────────────────────┘
+Installers / packages
+  - Windows NSIS installer
+  - Debian/Ubuntu .deb companion package
+  - scripts de developpement Windows/Linux
 ```
 
-### 2.1 Le compagnon Rust
+## 3. Fonctionnalites principales
 
-Programme léger (~3 Mo) qui tourne en tâche de fond sur l'ordinateur de l'utilisateur.
+| ID | Fonctionnalite | Statut | Notes |
+| --- | --- | --- | --- |
+| F1 | Detection automatique des `.onion` | Fait | Geree dans `background.js`. |
+| F2 | Routage SOCKS5 via Tor | Fait | `browser.proxy.onRequest` + `proxyDNS: true`. |
+| F3 | Telechargement automatique de Tor | Fait | Tor Expert Bundle officiel. |
+| F4 | Verification SHA-256 | Fait | Hashes pinnees dans `tor_manager.rs`. |
+| F5 | Lancement automatique de Tor | Fait | Demarrage a la demande via companion. |
+| F6 | Reutilisation d'un Tor existant | Fait | Verification Control Port + version minimale. |
+| F7 | Icone d'etat Firefox | Fait | Inactif, demarrage, actif, erreur. |
+| F8 | Arret propre de Tor | Fait partiel | Native Messaging arrete son Tor; tray Windows le garde volontairement vivant. |
+| F9 | Bouton marche/arret manuel | Fait | Popup start/stop. |
+| F10 | Notification premier lancement | Non fait | Pas prioritaire pour `0.2.2`. |
+| F11 | Mise a jour automatique de Tor | Non fait | Version Tor pinnee manuellement. |
+| F12 | Page de diagnostic | Non fait | Reste une bonne prochaine fonctionnalite. |
+| F13 | Mode "Tout via Tor" | Fait | Tout le trafic Firefox passe par Tor. |
+| F14 | Mode "Whitelist" | Fait | Domaines choisis + `.onion`. |
+| F15 | Gestion whitelist | Fait | Ajout/suppression dans le popup. |
+| F16 | Ajouter le site courant | Fait | Via `tabs.query`. |
+| F17 | WebRTC coupe en mode all | Fait | Via `browser.privacy.network`. |
+| F18 | Option WebRTC hors mode all | Fait | Preference utilisateur persistante. |
 
-### 2.2 L'extension Firefox
+## 4. Perimetre explicitement exclu
 
-S'installe comme n'importe quelle extension depuis addons.mozilla.org.
+- Pas de VPN.
+- Pas de chiffrement du trafic normal hors routage Tor.
+- Pas de gestion multi-circuits.
+- Pas d'interface pour publier un service `.onion`.
+- Pas de gestion specifique cookies/historique.
+- Pas de promesse d'equivalence avec le niveau d'isolation de Tor Browser.
 
-### 2.3 L'installeur
+## 5. Specification technique
 
-Un seul fichier à télécharger qui installe et configure les deux composants ci-dessus.
+### 5.1 Extension Firefox
 
----
+Choix techniques:
 
-## 3. Fonctionnalités
+- Manifest V3.
+- JavaScript sans bundler.
+- `browser.proxy.onRequest` pour le routage.
+- `browser.runtime.connectNative()` pour parler au companion.
+- `browser.storage.local` pour mode, whitelist et WebRTC.
 
-### 3.1 Fonctionnalités principales (indispensables)
+Modes:
 
-| #   | Fonctionnalité                     | Description                                                                             |
-| --- | ---------------------------------- | --------------------------------------------------------------------------------------- |
-| F1  | Détection automatique des `.onion` | L'extension repère toute URL se terminant par `.onion`                                  |
-| F2  | Routage automatique via Tor        | Le trafic est routé via le proxy Tor local (SOCKS5) selon le mode actif                 |
-| F3  | Téléchargement automatique de Tor  | Le compagnon télécharge le binaire officiel "Tor Expert Bundle" si absent               |
-| F4  | Vérification d'intégrité           | Le hash SHA-256 du binaire est vérifié avant toute exécution                            |
-| F5  | Lancement automatique de Tor       | Tor démarre en arrière-plan dès qu'une `.onion` est visitée                             |
-| F6  | Réutilisation d'un Tor existant    | Si Tor tourne déjà (ex: Tor Browser ouvert), le compagnon le **vérifie** puis l'utilise |
-| F7  | Icône dans la barre Firefox        | Indique l'état du proxy (actif / inactif / en cours de démarrage)                       |
+```text
+onion:
+  .onion -> Tor
+  reste  -> direct
 
-### 3.2 Fonctionnalités secondaires (souhaitables)
+all:
+  tout -> Tor
 
-| #   | Fonctionnalité                      | Description                                                                                                                                                 |
-| --- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F8  | Arrêt automatique de Tor            | Tor s'arrête quand Firefox est fermé ou après X minutes d'inactivité                                                                                        |
-| F9  | Bouton marche/arrêt manuel          | L'utilisateur peut forcer l'activation/désactivation depuis l'icône                                                                                         |
-| F10 | Notification au premier lancement   | Informe l'utilisateur que Tor est en cours de téléchargement                                                                                                |
-| F11 | Mise à jour automatique de Tor      | Vérifie périodiquement si une nouvelle version est disponible                                                                                               |
-| F12 | Page de diagnostic                  | Affiche l'état de Tor, le chemin du binaire, le port utilisé                                                                                                |
-| F13 | Mode "Tout via Tor"                 | Tout le trafic Firefox passe par Tor, pas seulement les `.onion`                                                                                            |
-| F14 | Mode "Whitelist"                    | Seuls les domaines ajoutés par l'utilisateur passent par Tor                                                                                                |
-| F15 | Gestion de la whitelist             | Interface pour ajouter, modifier et supprimer des domaines depuis le popup                                                                                  |
-| F16 | Bouton "Ajouter ce site"            | En un clic depuis le popup, le domaine du site actuellement visité est ajouté à la whitelist — sans avoir à taper quoi que ce soit                          |
-| F17 | Désactivation automatique de WebRTC | En mode "Tout via Tor", WebRTC est désactivé automatiquement dans Firefox — réactivé dès que l'utilisateur quitte ce mode                                   |
-| F18 | Option WebRTC pour les autres modes | Dans les modes "Onion uniquement" et "Whitelist", une case à cocher dans le popup permet à l'utilisateur de désactiver WebRTC manuellement s'il le souhaite |
+whitelist:
+  .onion                 -> Tor
+  domaine dans whitelist -> Tor
+  reste                  -> direct
+```
 
-### 3.3 Hors périmètre (explicitement exclus)
+Regle de securite: les `.onion` ne sortent jamais en direct. En cas d'erreur
+Tor, l'extension renvoie un proxy local impossible pour casser la requete.
 
-- Pas de VPN, pas de chiffrement du trafic normal (hors `.onion`)
-- Pas de gestion de plusieurs circuits Tor simultanés
-- Pas d'interface pour publier un service `.onion`
-- Pas de gestion des cookies ou de l'historique spécifique à Tor
+### 5.2 Companion Rust
 
----
+Choix techniques:
 
-## 4. Spécifications techniques
+- Rust edition 2021.
+- Tokio pour l'asynchrone.
+- Serde/JSON pour Native Messaging.
+- Reqwest + rustls pour le telechargement.
+- SHA-256 pinne pour verifier les archives Tor.
 
-### 4.1 Compagnon Rust
+Le companion accepte deux modes:
 
-| Élément               | Choix                                |
-| --------------------- | ------------------------------------ |
-| Langage               | Rust (édition 2021)                  |
-| Runtime async         | `tokio`                              |
-| Sérialisation JSON    | `serde` + `serde_json`               |
-| Téléchargement        | `reqwest`                            |
-| Vérification hash     | `sha2`                               |
-| Communication Firefox | Native Messaging (stdin/stdout JSON) |
-| Gestion processus Tor | `std::process::Command`              |
+- Native Messaging: lance par Firefox, communique en stdin/stdout.
+- Windows tray: lance au login, maintient Tor vivant et publie le port.
 
-**Protocole Native Messaging** : chaque message échangé avec Firefox est un JSON précédé de 4 octets indiquant sa taille (standard Mozilla).
+### 5.3 Protocole Native Messaging
 
-Messages supportés :
+Messages Firefox vers companion:
 
 ```json
-// Firefox → Compagnon
 { "action": "start" }
 { "action": "stop" }
 { "action": "status" }
+{ "action": "ping" }
+```
 
-// Compagnon → Firefox
-{ "status": "starting" }
+Messages companion vers Firefox:
+
+```json
 { "status": "ready", "port": 9050 }
 { "status": "stopped" }
 { "status": "error", "message": "..." }
+{ "status": "pong" }
 ```
 
-### 4.2 Extension Firefox
+Chaque message est prefixe par 4 octets little-endian indiquant la taille du
+payload JSON, selon le standard Mozilla Native Messaging.
 
-| Élément                 | Choix                                    |
-| ----------------------- | ---------------------------------------- |
-| Langage                 | JavaScript (Manifest V3)                 |
-| API proxy               | `browser.proxy.onRequest`                |
-| Communication compagnon | `browser.runtime.connectNative()`        |
-| Permissions requises    | `proxy`, `nativeMessaging`, `webRequest` |
+### 5.4 Tor Expert Bundle
 
-**Les 3 modes de routage :**
+La version Tor connue est pinnee dans `companion/src/tor_manager.rs`.
 
-| Mode                    | Icône  | Comportement                                                               |
-| ----------------------- | ------ | -------------------------------------------------------------------------- |
-| 🧅 **Onion uniquement** | Violet | Seules les URLs en `.onion` passent par Tor — tout le reste va directement |
-| 🌍 **Tout via Tor**     | Bleu   | L'intégralité du trafic Firefox est routée via Tor                         |
-| 📋 **Whitelist**        | Orange | Seuls les domaines ajoutés par l'utilisateur passent par Tor               |
+Le companion connait les bundles:
 
-**Algorithme de routage (appliqué à chaque requête) :**
+- Windows x86_64.
+- Linux x86_64.
+- macOS x86_64.
+- macOS aarch64.
 
-```
-Mode "Onion uniquement" :
-  Si URL se termine par ".onion" → Tor
-  Sinon                          → Direct
+La verification SHA-256 est obligatoire. Une archive inconnue ou modifiee est
+refusee.
 
-Mode "Tout via Tor" :
-  Toujours                       → Tor
+### 5.5 Detection de Tor existant
 
-Mode "Whitelist" :
-  Si domaine est dans la liste   → Tor
-  Si URL se termine par ".onion" → Tor  (toujours, même en whitelist)
-  Sinon                          → Direct
-```
+Ports sondes:
 
-> **Note :** les `.onion` passent toujours par Tor quel que soit le mode — c'est non négociable, car ils sont inaccessibles sans Tor.
+| SOCKS | Control | Usage probable |
+| --- | --- | --- |
+| 9050 | 9051 | Tor systeme |
+| 9150 | 9151 | Tor Browser |
 
-**Persistance :** le mode actif et la liste whitelist sont sauvegardés dans le stockage local de Firefox (`browser.storage.local`), côté extension uniquement — le compagnon Rust n'a pas besoin de les connaître.
+Verification:
 
-**Interface whitelist (dans le popup) :**
+1. Connexion TCP au Control Port.
+2. `PROTOCOLINFO 1`.
+3. Authentification `NULL` ou `COOKIE`.
+4. `GETINFO version`.
+5. Version minimale `0.4.7.0`.
 
-- Champ texte pour saisir un domaine (ex: `monsite.com`)
-- Bouton "Ajouter le site actuel" pour ajouter d'un clic le domaine visité
-- Liste des domaines ajoutés avec bouton de suppression par entrée
+`SAFECOOKIE` et `HASHEDPASSWORD` ne sont pas encore supportes pour la
+reutilisation. Le companion lance alors son propre Tor.
 
-### 4.3 Détection et vérification d'un Tor existant
+## 6. Distribution
 
-Avant de lancer son propre processus Tor, le compagnon Rust **vérifie** ce qui tourne éventuellement sur les ports connus.
+### 6.1 Windows
 
-**Ports sondés dans l'ordre :**
+Statut: fait.
 
-| Port proxy | Port de contrôle | Utilisé par                     |
-| ---------- | ---------------- | ------------------------------- |
-| 9050       | 9051             | Tor installé en service système |
-| 9150       | 9151             | Tor Browser                     |
+L'installeur NSIS:
 
-**Algorithme de vérification :**
+- installe le companion sous `%LOCALAPPDATA%\OnionRouter`;
+- genere le manifest Native Messaging;
+- inscrit la cle registre Firefox sous HKCU;
+- ajoute une entree de desinstallation;
+- lance et enregistre le tray au login;
+- place une XPI a cote de l'installation.
 
-```
-Pour chaque paire (port_proxy, port_contrôle) :
+Le build Windows est fait par GitHub Actions.
 
-  1. Tenter une connexion TCP sur port_contrôle
-     → Échec : rien ne tourne ici, on passe à la paire suivante
+### 6.2 Extension Firefox signee
 
-  2. Envoyer : AUTHENTICATE ""
-     → Réponse attendue : 250 OK
-     → Autre réponse : ce n'est PAS Tor → passer à la paire suivante
+Statut: disponible hors depot pour le moment.
 
-  3. Envoyer : GETINFO version
-     → Réponse attendue : 250-version=0.4.x.x  (format Tor)
-     → Autre réponse : ce n'est PAS Tor → passer à la paire suivante
+La distribution finale doit utiliser une XPI signee par AMO, listee ou non
+listee. L'automatisation `web-ext sign` reste possible quand les secrets AMO
+seront disponibles.
 
-  4. Vérifier que la version ≥ version minimale acceptée (ex: 0.4.7)
-     → Trop ancienne : ignorer, lancer notre propre Tor
+### 6.3 Debian/Ubuntu
 
-  5. ✅ C'est bien Tor, version acceptable → réutiliser ce proxy
+Statut: fait pour `0.2.2`.
 
-Si aucune paire ne passe la vérification :
-  → Lancer notre propre Tor sur le premier port libre trouvé
+Le script `installer/linux/build-deb.sh` produit:
+
+```text
+dist/onionrouter-companion_<version>_amd64.deb
 ```
 
-**Ce que ça protège :**
+Le paquet installe:
 
-- Un proxy SOCKS5 quelconque qui tournerait par hasard sur le port 9050 ne sera jamais confondu avec Tor
-- Un vieux Tor trop ancien (et potentiellement vulnérable) ne sera pas réutilisé
-- Le port exact utilisé est toujours communiqué à l'extension (`"port": 9050` ou autre)
+- `/usr/lib/onionrouter/onionrouter-companion`
+- `/usr/lib/mozilla/native-messaging-hosts/com.onionrouter.companion.json`
+- `/usr/share/doc/onionrouter-companion/`
 
-**Module Rust dédié :** `tor_detector.rs`
+Le paquet Debian n'installe pas l'extension Firefox. Elle doit etre installee
+separement via AMO ou une XPI signee.
 
----
+### 6.4 macOS
 
-### 4.4 Compatibilité OS
+Statut: non fait.
 
-| OS                    | Support       | Notes                         |
-| --------------------- | ------------- | ----------------------------- |
-| Windows 10/11         | ✅ Prioritaire | Installeur `.exe`             |
-| macOS 12+             | ✅ Secondaire  | Installeur `.pkg`             |
-| Linux (Ubuntu/Debian) | ✅ Secondaire  | Paquet `.deb` ou script shell |
+Le companion contient deja une entree Tor Expert Bundle macOS, mais le
+packaging `.pkg` et l'enregistrement systeme ne sont pas encore implementes.
 
-### 4.5 Tor Expert Bundle
+## 7. Etat des phases
 
-- Source officielle : `https://www.torproject.org/download/tor/`
-- Hashes SHA-256 codés en dur dans le compagnon (comme dans tornion)
-- Stockage local : `%APPDATA%\OnionRouter\tor\` (Windows) / `~/.local/share/onionrouter/tor/` (Linux/Mac)
+### Phase 1 - MVP
 
----
+- [x] Companion Rust Native Messaging.
+- [x] Telechargement et verification SHA-256 du binaire Tor.
+- [x] Lancement Tor et attente bootstrap.
+- [x] Detection `.onion`.
+- [x] Routage SOCKS5.
+- [x] Icone d'etat.
 
-## 5. Expérience utilisateur
+### Phase 2 - Robustesse
 
-### 5.1 Installation (une seule fois)
+- [x] Detection Tor existant via Control Port.
+- [x] Verification que l'instance est bien Tor.
+- [x] Verification version minimale.
+- [x] Fallback lancement Tor interne.
+- [x] Messages d'erreur lisibles.
+- [x] Arret propre du Tor possede par la session Native Messaging.
+- [x] Support Windows.
+- [x] Support Linux companion.
 
-```
-1. L'utilisateur télécharge l'installeur depuis le site du projet
-2. Il l'exécute → le compagnon Rust est installé + enregistré auprès de Firefox
-3. Il installe l'extension depuis addons.mozilla.org (lien fourni par l'installeur)
-4. C'est tout.
-```
+### Phase 3 - Modes avances
 
-### 5.2 Usage quotidien
+- [x] Mode "Tout via Tor".
+- [x] Mode "Whitelist".
+- [x] Interface ajout/suppression whitelist.
+- [x] Bouton "Ajouter ce site".
+- [x] Persistance mode, whitelist et WebRTC.
+- [x] Icones selon le mode.
+- [x] Gestion WebRTC.
 
-```
-1. L'utilisateur tape une adresse .onion dans Firefox
-2. L'icône de l'extension passe en "chargement" (⏳)
-3. Le compagnon lance Tor en arrière-plan (5-15 secondes au premier lancement)
-4. L'icône passe au vert (✅) — le site s'affiche
-5. Les prochaines visites .onion sont instantanées (Tor reste actif)
-```
+### Phase 4 - Distribution
 
-### 5.3 États de l'icône
+- [x] Installeur Windows.
+- [x] Workflow release Windows.
+- [x] Paquet Debian/Ubuntu companion.
+- [x] Workflow release `.deb`.
+- [x] Documentation technique.
+- [ ] Publication AMO integree au depot.
+- [ ] Page de diagnostic.
+- [ ] Packaging macOS.
 
-| Icône            | Signification                        |
-| ---------------- | ------------------------------------ |
-| ⚫ Gris           | Compagnon non connecté / Tor inactif |
-| 🟡 Jaune         | Tor en cours de démarrage            |
-| 🟢 Vert (violet) | Tor actif — Mode `.onion` uniquement |
-| 🟢 Vert (bleu)   | Tor actif — Mode "Tout via Tor"      |
-| 🟢 Vert (orange) | Tor actif — Mode "Whitelist"         |
-| 🔴 Rouge         | Erreur (voir diagnostic)             |
+## 8. Criteres de succes
 
-### 5.4 Changer de mode
+- [x] Une adresse `.onion` s'ouvre dans Firefox sans configuration proxy
+      manuelle.
+- [x] Le trafic normal reste direct en mode `onion`.
+- [x] Le mode `all` route tout via Tor.
+- [x] La whitelist route uniquement les domaines choisis.
+- [x] Les DNS des requetes routees passent par Tor.
+- [x] Le companion refuse les archives Tor non verifiees.
+- [x] Les tests unitaires Rust passent.
+- [x] Le manifest Firefox est valide.
+- [x] Les scripts JS passent le check syntaxique.
+- [ ] La release publique finale pointe vers une XPI signee disponible.
 
-Depuis le popup de l'icône, l'utilisateur voit :
+## 9. Prochaines priorites
 
-```
-┌─────────────────────────────────┐
-│  🧅 OnionRouter          [●]    │
-│  ───────────────────────────    │
-│  Mode actif :                   │
-│  ○ Onion uniquement             │
-│  ○ Tout via Tor                 │  ← WebRTC désactivé automatiquement
-│  ○ Whitelist                    │
-│  ───────────────────────────    │
-│  ☐ Désactiver WebRTC            │  ← visible en mode Onion / Whitelist
-│  ───────────────────────────    │
-│  [+ Ajouter ce site]            │  ← visible en mode Whitelist
-│  monsite.com              [✕]   │
-│  autresite.org            [✕]   │
-└─────────────────────────────────┘
-```
-
-Règles d'affichage du popup :
-
-- La case "Désactiver WebRTC" n'apparaît **pas** en mode "Tout via Tor" (WebRTC est déjà coupé automatiquement)
-- La section whitelist n'apparaît que si le mode "Whitelist" est sélectionné
-- Un petit cadenas 🔒 s'affiche à côté de "Tout via Tor" pour signaler la protection renforcée
-
----
-
-## 6. Sécurité
-
-| Risque                                 | Mesure                                                                           |
-| -------------------------------------- | -------------------------------------------------------------------------------- |
-| Binaire Tor corrompu ou falsifié       | Vérification SHA-256 obligatoire avant exécution                                 |
-| Fuite DNS                              | Firefox forcé à résoudre les DNS via Tor (`socks_remote_dns = true`)             |
-| Fuite WebRTC en mode "Tout via Tor"    | WebRTC désactivé automatiquement à l'activation du mode                          |
-| Fuite WebRTC en mode Onion / Whitelist | Case à cocher dans le popup — désactivation manuelle au choix de l'utilisateur   |
-| Exécution non autorisée du compagnon   | Le compagnon ne répond qu'à Firefox (vérification de l'origine Native Messaging) |
-| Mise à jour malveillante               | Hashes connus codés en dur ; versions inconnues refusées                         |
-| Proxy imposteur sur le port 9050       | Vérification obligatoire via le Tor Control Port avant toute réutilisation       |
-| Tor trop ancien réutilisé              | Version minimale vérifiée via `GETINFO version` ; refusé si inférieure au seuil  |
-
----
-
-## 7. Structure des dépôts GitHub
-
-```
-onionrouter/                  ← Repo principal (monorepo)
-├── companion/                ← Code Rust du compagnon
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── tor_manager.rs    ← Téléchargement, vérification, lancement de Tor
-│   │   ├── tor_detector.rs   ← Vérification d'un Tor existant via Control Port
-│   │   ├── messaging.rs      ← Protocole Native Messaging Firefox
-│   │   └── proxy.rs          ← Gestion SOCKS5
-│   └── Cargo.toml
-├── extension/                ← Code de l'extension Firefox
-│   ├── manifest.json
-│   ├── background.js         ← Logique proxy + communication compagnon
-│   ├── popup.html            ← Interface de l'icône
-│   └── icons/
-├── installer/                ← Scripts d'installation (Windows/Mac/Linux)
-└── README.md
-```
-
----
-
-## 8. Phases de développement
-
-### Phase 1 — Fondations (MVP)
-
-- [ ] Compagnon Rust : Native Messaging fonctionnel avec Firefox
-- [ ] Compagnon Rust : Téléchargement + vérification SHA-256 du binaire Tor
-- [ ] Compagnon Rust : Lancement de Tor et détection du port prêt
-- [ ] Extension : Détection des URLs `.onion`
-- [ ] Extension : Routage via le proxy SOCKS5
-- [ ] Extension : Icône avec état basique (actif/inactif)
-
-### Phase 2 — Robustesse
-
-- [ ] Détection d'un Tor existant via sondage TCP des ports 9050/9150
-- [ ] Vérification que c'est bien Tor via le Control Port (AUTHENTICATE + GETINFO version)
-- [ ] Vérification de la version minimale de Tor
-- [ ] Fallback : lancement de notre Tor si aucun Tor valide détecté
-- [ ] Gestion des erreurs et messages clairs pour l'utilisateur
-- [ ] Arrêt propre de Tor à la fermeture de Firefox
-- [ ] Support Windows + Linux
-
-### Phase 3 — Modes avancés
-
-- [ ] Mode "Tout via Tor" (routage global)
-- [ ] Mode "Whitelist" avec interface d'ajout/suppression de domaines
-- [ ] Bouton "Ajouter le site actuel" dans le popup
-- [ ] Persistance du mode et de la whitelist via `browser.storage.local`
-- [ ] Couleur de l'icône selon le mode actif
-
-### Phase 4 — Distribution
-
-- [ ] Installeur Windows (`.exe`)
-- [ ] Installeur Linux (`.deb` / script)
-- [ ] Publication sur addons.mozilla.org
-- [ ] Page de diagnostic dans l'extension
-- [ ] Support macOS
-
----
-
-## 9. Critères de succès
-
-- ✅ Un utilisateur non-technique peut installer et utiliser l'outil en moins de 5 minutes
-- ✅ Une adresse `.onion` s'ouvre dans Firefox sans configuration manuelle
-- ✅ Le trafic normal (hors `.onion`) n'est jamais modifié
-- ✅ L'exécutable compagnon pèse moins de 10 Mo
-- ✅ Aucune dépendance externe requise côté utilisateur
+1. Publier la `0.2.2` avec XPI/EXE Windows et `.deb`.
+2. Verifier le `.deb` sur une Debian/Ubuntu propre.
+3. Ajouter une page diagnostic dans l'extension.
+4. Ajouter l'automatisation AMO si les secrets sont disponibles.
+5. Etudier le packaging macOS.
+6. Ajouter `SAFECOOKIE` pour reutiliser davantage d'instances Tor externes.
