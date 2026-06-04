@@ -35,6 +35,8 @@ Fichiers principaux:
 - `extension/manifest.json`: permissions, ID Gecko, popup, background.
 - `extension/background.js`: routage, Native Messaging, WebRTC, stockage.
 - `extension/popup.html`, `popup.css`, `popup.js`: interface utilisateur.
+- `extension/diagnostics.html`, `diagnostics.css`, `diagnostics.js`: page de
+  diagnostic, ouverte depuis le popup dans un onglet.
 
 Permissions utilisees:
 
@@ -88,6 +90,7 @@ Messages extension vers companion:
 { "action": "stop" }
 { "action": "status" }
 { "action": "ping" }
+{ "action": "diagnostic" }
 ```
 
 Messages companion vers extension:
@@ -97,10 +100,43 @@ Messages companion vers extension:
 { "status": "stopped" }
 { "status": "error", "message": "..." }
 { "status": "pong" }
+{ "status": "diagnostic", "running": true, "source": "owned",
+  "socks_port": 9050, "control_port": 9051, "tor_version": null,
+  "bundle_version": "15.0.13", "companion_version": "0.2.2",
+  "platform": "windows/x86_64", "data_dir": "..." }
 ```
+
+`diagnostic` renvoie un instantane best-effort. `source` vaut `owned`
+(Tor lance par le companion), `tray` (daemon tray) ou `external` (Tor
+reutilise). `tor_version` n'est connu que pour un Tor externe reutilise.
+Les champs statiques (`bundle_version`, `companion_version`, `platform`,
+`data_dir`) sont toujours renvoyes, meme si Tor n'est pas demarre.
 
 `starting` existe dans le type Rust, mais le flux actuel ne l'emet pas encore
 depuis le companion. L'extension gere deja cet etat cote UI.
+
+## Page de diagnostic
+
+Ouverte via le lien "Diagnostics…" du popup, dans un onglet
+(`browser.tabs.create` + `runtime.getURL("diagnostics.html")`). Elle agrege
+trois sources:
+
+- l'etat de l'extension (`get-state`): statut, mode, WebRTC, whitelist;
+- un instantane du companion (`get-diagnostic`): version companion, plateforme,
+  source Tor, ports SOCKS/Control, version Tor, version bundle, dossier data;
+- un test de connectivite (`ping-companion`): aller-retour `ping`/`pong` chronometre.
+
+Cote `background.js`:
+
+- `ensureCompanionPort()` ouvre le port Native Messaging **sans** demarrer Tor,
+  pour que la page puisse interroger le companion meme a l'arret.
+- `requestDiagnostic()` / `pingCompanion()` envoient la requete et resolvent une
+  promesse one-shot quand la reponse arrive (avec timeout et rejet sur
+  deconnexion du companion).
+
+Le bouton "Copy report" copie un resume texte (clipboard API, repli sur
+`execCommand`) pour les rapports de bug. La page n'introduit aucune nouvelle
+permission: l'ouverture d'onglet utilise `tabs`, deja requise.
 
 ## Gestion de Tor
 

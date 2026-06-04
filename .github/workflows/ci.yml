@@ -65,6 +65,9 @@ jobs:
       - name: Check popup.js syntax
         run: node --check extension/popup.js
 
+      - name: Check diagnostics.js syntax
+        run: node --check extension/diagnostics.js
+
   packaging:
     name: Packaging scripts
     runs-on: ubuntu-latest

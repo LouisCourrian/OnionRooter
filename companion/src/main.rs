@@ -58,9 +58,23 @@ impl Backend {
     }
 }
 
+/// Diagnostic metadata captured when a backend becomes active. Kept
+/// alongside the backend so the extension's diagnostic page can report
+/// where Tor came from, which ports it uses, and its version.
+#[derive(Clone)]
+struct DiagInfo {
+    /// "owned" | "tray" | "external".
+    source: &'static str,
+    socks_port: u16,
+    control_port: u16,
+    /// Tor daemon version, only known for reused external instances.
+    tor_version: Option<String>,
+}
+
 #[derive(Default)]
 struct State {
     backend: Option<Backend>,
+    info: Option<DiagInfo>,
 }
 
 impl State {
@@ -70,6 +84,21 @@ impl State {
                 port: b.socks_port(),
             },
             None => OutboundMessage::Stopped,
+        }
+    }
+
+    fn diagnostic(&self) -> OutboundMessage {
+        let info = self.info.as_ref();
+        OutboundMessage::Diagnostic {
+            running: self.backend.is_some(),
+            source: info.map(|i| i.source.to_string()),
+            socks_port: info.map(|i| i.socks_port),
+            control_port: info.map(|i| i.control_port),
+            tor_version: info.and_then(|i| i.tor_version.clone()),
+            bundle_version: tor_manager::BUNDLE_VERSION.to_string(),
+            companion_version: env!("CARGO_PKG_VERSION").to_string(),
+            platform: tor_manager::host_platform(),
+            data_dir: tor_manager::data_dir().map(|p| p.display().to_string()),
         }
     }
 }
@@ -147,6 +176,7 @@ async fn handle(state: &Arc<Mutex<State>>, msg: InboundMessage) -> OutboundMessa
     match msg {
         InboundMessage::Ping => OutboundMessage::Pong,
         InboundMessage::Status => state.lock().await.snapshot(),
+        InboundMessage::Diagnostic => state.lock().await.diagnostic(),
         InboundMessage::Stop => stop(state).await,
         InboundMessage::Start => start(state).await,
     }
@@ -172,9 +202,18 @@ async fn start(state: &Arc<Mutex<State>>) -> OutboundMessage {
                     "found tray-published Tor on socks={} control={} (pid {})",
                     rt.socks_port, rt.control_port, rt.tray_pid
                 );
-                state.lock().await.backend = Some(Backend::Reused {
-                    socks_port: rt.socks_port,
-                });
+                {
+                    let mut s = state.lock().await;
+                    s.backend = Some(Backend::Reused {
+                        socks_port: rt.socks_port,
+                    });
+                    s.info = Some(DiagInfo {
+                        source: "tray",
+                        socks_port: rt.socks_port,
+                        control_port: rt.control_port,
+                        tor_version: None,
+                    });
+                }
                 return OutboundMessage::Ready {
                     port: rt.socks_port,
                 };
@@ -197,7 +236,16 @@ async fn start(state: &Arc<Mutex<State>>) -> OutboundMessage {
             detected.version, detected.socks_port, detected.control_port
         );
         let port = detected.socks_port;
-        state.lock().await.backend = Some(Backend::Reused { socks_port: port });
+        {
+            let mut s = state.lock().await;
+            s.backend = Some(Backend::Reused { socks_port: port });
+            s.info = Some(DiagInfo {
+                source: "external",
+                socks_port: detected.socks_port,
+                control_port: detected.control_port,
+                tor_version: Some(detected.version.to_string()),
+            });
+        }
         return OutboundMessage::Ready { port };
     }
 
@@ -205,7 +253,17 @@ async fn start(state: &Arc<Mutex<State>>) -> OutboundMessage {
     match launch_owned().await {
         Ok(launched) => {
             let port = launched.socks_port;
-            state.lock().await.backend = Some(Backend::Owned(launched));
+            let control_port = launched.control_port;
+            {
+                let mut s = state.lock().await;
+                s.backend = Some(Backend::Owned(launched));
+                s.info = Some(DiagInfo {
+                    source: "owned",
+                    socks_port: port,
+                    control_port,
+                    tor_version: None,
+                });
+            }
             OutboundMessage::Ready { port }
         }
         Err(e) => {
@@ -232,6 +290,7 @@ async fn launch_owned() -> Result<LaunchedTor> {
 
 async fn stop(state: &Arc<Mutex<State>>) -> OutboundMessage {
     let mut s = state.lock().await;
+    s.info = None;
     match s.backend.take() {
         Some(Backend::Owned(mut tor)) => {
             tor_manager::shutdown(&mut tor).await;

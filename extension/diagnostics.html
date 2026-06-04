@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OnionRouter — Diagnostics</title>
+  <link rel="stylesheet" href="diagnostics.css">
+</head>
+<body>
+  <main class="page">
+    <header>
+      <span class="logo" aria-hidden="true">🧅</span>
+      <h1>OnionRouter diagnostics</h1>
+      <span class="status-pill" id="status-pill" data-status="disconnected">Inactive</span>
+    </header>
+
+    <p class="intro">
+      A snapshot of the extension, the companion, and the Tor backend — handy
+      when something doesn't work or when filing a bug report.
+    </p>
+
+    <section class="card">
+      <h2>Companion</h2>
+      <div class="row">
+        <span class="key">Connection</span>
+        <span class="value" id="companion-conn">Checking…</span>
+      </div>
+      <div class="row">
+        <span class="key">Companion version</span>
+        <span class="value" id="companion-version">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Platform</span>
+        <span class="value" id="platform">—</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Tor backend</h2>
+      <div class="row">
+        <span class="key">Running</span>
+        <span class="value" id="tor-running">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Source</span>
+        <span class="value" id="tor-source">—</span>
+      </div>
+      <div class="row">
+        <span class="key">SOCKS port</span>
+        <span class="value" id="tor-socks">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Control port</span>
+        <span class="value" id="tor-control">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Tor version</span>
+        <span class="value" id="tor-version">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Bundle version</span>
+        <span class="value" id="bundle-version">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Data directory</span>
+        <span class="value path" id="data-dir">—</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Extension</h2>
+      <div class="row">
+        <span class="key">Extension version</span>
+        <span class="value" id="ext-version">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Status</span>
+        <span class="value" id="ext-status">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Routing mode</span>
+        <span class="value" id="ext-mode">—</span>
+      </div>
+      <div class="row">
+        <span class="key">WebRTC</span>
+        <span class="value" id="ext-webrtc">—</span>
+      </div>
+      <div class="row">
+        <span class="key">Whitelisted domains</span>
+        <span class="value" id="ext-whitelist">—</span>
+      </div>
+      <div class="row" id="ext-error-row" hidden>
+        <span class="key">Last error</span>
+        <span class="value error" id="ext-error">—</span>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button type="button" id="refresh-btn">Refresh</button>
+      <button type="button" id="ping-btn">Run ping test</button>
+      <button type="button" id="copy-btn">Copy report</button>
+    </div>
+    <p class="hint" id="action-hint" aria-live="polite"></p>
+  </main>
+
+  <script src="diagnostics.js"></script>
+</body>
+</html>

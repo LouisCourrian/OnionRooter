@@ -254,3 +254,21 @@ button.secondary {
 #start-btn:hover:not(:disabled) {
   background: #6a35a0; border-color: #6a35a0; color: #fff;
 }
+
+/* ---------- Footer ---------- */
+.popup-footer {
+  display: flex;
+  justify-content: center;
+  padding: 0 14px 12px;
+}
+button.link {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 6px;
+}
+button.link:hover:not(:disabled) {
+  color: var(--accent);
+  background: transparent;
+}

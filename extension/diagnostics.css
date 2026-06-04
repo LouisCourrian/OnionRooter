@@ -1,0 +1,147 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --bg-elev: #f7f7f8;
+  --fg: #1a1a1a;
+  --muted: #6b6b6b;
+  --border: #e2e2e2;
+  --accent: #7a3fb8;
+  --danger: #c53030;
+  --ok: #1e8a4a;
+  --warn: #c98a14;
+  --idle: #8a8a8a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1f1f23;
+    --bg-elev: #28282e;
+    --fg: #f0f0f0;
+    --muted: #a0a0a0;
+    --border: #34343a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+/* ---------- Header ---------- */
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+header .logo { font-size: 24px; }
+header h1 { margin: 0; font-size: 20px; font-weight: 600; flex: 1; }
+
+.status-pill {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--idle);
+  color: #fff;
+  font-weight: 500;
+}
+.status-pill[data-status="starting"] { background: var(--warn); }
+.status-pill[data-status="ready"]    { background: var(--ok); }
+.status-pill[data-status="error"]    { background: var(--danger); }
+
+.intro {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+/* ---------- Cards ---------- */
+.card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.card h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+}
+.row:first-of-type { border-top: none; }
+
+.key { color: var(--muted); white-space: nowrap; }
+
+.value {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  text-align: right;
+  word-break: break-word;
+}
+.value.path { font-size: 12px; }
+.value.error { color: var(--danger); }
+
+.value[data-state="ok"]   { color: var(--ok); }
+.value[data-state="bad"]  { color: var(--danger); }
+.value[data-state="warn"] { color: var(--warn); }
+
+/* ---------- Actions ---------- */
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+button {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+#refresh-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+#refresh-btn:hover:not(:disabled) {
+  background: #6a35a0; border-color: #6a35a0; color: #fff;
+}
+
+.hint {
+  margin: 10px 0 0;
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}

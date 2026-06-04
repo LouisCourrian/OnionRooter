@@ -18,6 +18,8 @@ pub enum InboundMessage {
     Stop,
     Status,
     Ping,
+    /// Request a full diagnostic snapshot (Tor source, ports, versions...).
+    Diagnostic,
 }
 
 /// Message sent by the companion to the extension.
@@ -29,6 +31,27 @@ pub enum OutboundMessage {
     Stopped,
     Error { message: String },
     Pong,
+    /// Reply to a `Diagnostic` request. All fields are best-effort; the
+    /// `Option`s are `null` when Tor is not running or the value is unknown.
+    Diagnostic {
+        /// Whether a Tor backend is currently active.
+        running: bool,
+        /// "owned" (we launched it), "tray" (tray daemon), or "external"
+        /// (reused system Tor / Tor Browser). `null` when not running.
+        source: Option<String>,
+        socks_port: Option<u16>,
+        control_port: Option<u16>,
+        /// Tor daemon version, when known (only for reused external Tor).
+        tor_version: Option<String>,
+        /// Pinned Tor Expert Bundle version this companion ships.
+        bundle_version: String,
+        /// Companion crate version.
+        companion_version: String,
+        /// Host platform, e.g. "windows/x86_64".
+        platform: String,
+        /// Tor data directory path, when resolvable.
+        data_dir: Option<String>,
+    },
 }
 
 /// Read one framed message from stdin. Returns `Ok(None)` on clean EOF.
@@ -104,5 +127,44 @@ mod tests {
         let body = std::str::from_utf8(&out[4..4 + len]).unwrap();
         assert!(body.contains("\"status\":\"ready\""));
         assert!(body.contains("\"port\":9050"));
+    }
+
+    #[tokio::test]
+    async fn parses_diagnostic_action() {
+        let payload = br#"{"action":"diagnostic"}"#;
+        let mut framed = Vec::new();
+        framed.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        framed.extend_from_slice(payload);
+
+        let mut reader = BufReader::new(Cursor::new(framed));
+        let msg = read_message(&mut reader).await.unwrap().unwrap();
+        assert!(matches!(msg, InboundMessage::Diagnostic));
+    }
+
+    #[tokio::test]
+    async fn serializes_diagnostic_response() {
+        let mut out: Vec<u8> = Vec::new();
+        write_message(
+            &mut out,
+            &OutboundMessage::Diagnostic {
+                running: true,
+                source: Some("owned".into()),
+                socks_port: Some(9050),
+                control_port: Some(9051),
+                tor_version: None,
+                bundle_version: "15.0.13".into(),
+                companion_version: "0.2.2".into(),
+                platform: "linux/x86_64".into(),
+                data_dir: Some("/home/u/.local/share/OnionRouter/tor/data".into()),
+            },
+        )
+        .await
+        .unwrap();
+        let len = u32::from_le_bytes(out[..4].try_into().unwrap()) as usize;
+        let body = std::str::from_utf8(&out[4..4 + len]).unwrap();
+        assert!(body.contains("\"status\":\"diagnostic\""));
+        assert!(body.contains("\"source\":\"owned\""));
+        assert!(body.contains("\"tor_version\":null"));
+        assert!(body.contains("\"bundle_version\":\"15.0.13\""));
     }
 }

@@ -50,7 +50,7 @@ Installers / packages
 | F9 | Bouton marche/arret manuel | Fait | Popup start/stop. |
 | F10 | Notification premier lancement | Non fait | Pas prioritaire pour `0.2.2`. |
 | F11 | Mise a jour automatique de Tor | Non fait | Version Tor pinnee manuellement. |
-| F12 | Page de diagnostic | Non fait | Reste une bonne prochaine fonctionnalite. |
+| F12 | Page de diagnostic | Fait | Page extension + action `diagnostic` du companion. |
 | F13 | Mode "Tout via Tor" | Fait | Tout le trafic Firefox passe par Tor. |
 | F14 | Mode "Whitelist" | Fait | Domaines choisis + `.onion`. |
 | F15 | Gestion whitelist | Fait | Ajout/suppression dans le popup. |
@@ -122,6 +122,7 @@ Messages Firefox vers companion:
 { "action": "stop" }
 { "action": "status" }
 { "action": "ping" }
+{ "action": "diagnostic" }
 ```
 
 Messages companion vers Firefox:
@@ -131,6 +132,18 @@ Messages companion vers Firefox:
 { "status": "stopped" }
 { "status": "error", "message": "..." }
 { "status": "pong" }
+{
+  "status": "diagnostic",
+  "running": true,
+  "source": "owned",
+  "socks_port": 9050,
+  "control_port": 9051,
+  "tor_version": null,
+  "bundle_version": "15.0.13",
+  "companion_version": "0.2.2",
+  "platform": "windows/x86_64",
+  "data_dir": "..."
+}
 ```
 
 Chaque message est prefixe par 4 octets little-endian indiquant la taille du
@@ -273,8 +286,8 @@ packaging `.pkg` et l'enregistrement systeme ne sont pas encore implementes.
 - [x] Paquet Debian/Ubuntu companion.
 - [x] Workflow release `.deb`.
 - [x] Documentation technique.
+- [x] Page de diagnostic.
 - [ ] Publication AMO integree au depot.
-- [ ] Page de diagnostic.
 - [ ] Packaging macOS.
 
 ## 8. Criteres de succes
@@ -293,9 +306,7 @@ packaging `.pkg` et l'enregistrement systeme ne sont pas encore implementes.
 
 ## 9. Prochaines priorites
 
-1. Publier la `0.2.2` avec XPI/EXE Windows et `.deb`.
-2. Verifier le `.deb` sur une Debian/Ubuntu propre.
-3. Ajouter une page diagnostic dans l'extension.
-4. Ajouter l'automatisation AMO si les secrets sont disponibles.
-5. Etudier le packaging macOS.
-6. Ajouter `SAFECOOKIE` pour reutiliser davantage d'instances Tor externes.
+1. Verifier le `.deb` sur une Debian/Ubuntu propre.
+2. Ajouter l'automatisation AMO si les secrets sont disponibles.
+3. Etudier le packaging macOS.
+4. Ajouter `SAFECOOKIE` pour reutiliser davantage d'instances Tor externes.

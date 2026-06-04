@@ -52,6 +52,11 @@ let readyPromise = null;
 let readyResolve = null;
 let readyReject = null;
 
+// Pending one-shot request/response waiters for diagnostic + ping round-trips.
+// Each entry is { resolve, reject, timer }.
+const diagnosticWaiters = new Set();
+const pingWaiters = new Set();
+
 // ---------- Settings persistence --------------------------------------
 
 async function loadSettings() {
@@ -112,22 +117,32 @@ async function applyWebRTC() {
 
 // ---------- Companion connection --------------------------------------
 
+/**
+ * Open the Native Messaging port (spawning the companion) WITHOUT starting
+ * Tor. Used by the diagnostic page / ping test, which must be able to talk
+ * to the companion without forcing a Tor launch. Returns true on success.
+ */
+function ensureCompanionPort() {
+  if (companionPort) return true;
+  try {
+    companionPort = browser.runtime.connectNative(COMPANION_HOST);
+  } catch (err) {
+    console.error("[OnionRouter] connectNative threw:", err);
+    setStatus("error", { errorMessage: String((err && err.message)) || "connectNative failed" });
+    return false;
+  }
+  companionPort.onMessage.addListener(onCompanionMessage);
+  companionPort.onDisconnect.addListener(onCompanionDisconnect);
+  return true;
+}
+
 function connectCompanion() {
   if (companionPort) return;
   console.info("[OnionRouter] connecting to companion", COMPANION_HOST);
 
   setStatus("starting", { errorMessage: null });
 
-  try {
-    companionPort = browser.runtime.connectNative(COMPANION_HOST);
-  } catch (err) {
-    console.error("[OnionRouter] connectNative threw:", err);
-    setStatus("error", { errorMessage: String((err && err.message)) || "connectNative failed" });
-    return;
-  }
-
-  companionPort.onMessage.addListener(onCompanionMessage);
-  companionPort.onDisconnect.addListener(onCompanionDisconnect);
+  if (!ensureCompanionPort()) return;
   send({ action: "start" });
 }
 
@@ -148,6 +163,52 @@ function settleReady(value, error) {
   readyPromise = null;
   readyResolve = null;
   readyReject = null;
+}
+
+// ---------- Diagnostic / ping round-trips -----------------------------
+
+function settleWaiters(set, value) {
+  for (const w of set) {
+    clearTimeout(w.timer);
+    w.resolve(value);
+  }
+  set.clear();
+}
+
+function rejectWaiters(set, error) {
+  for (const w of set) {
+    clearTimeout(w.timer);
+    w.reject(error);
+  }
+  set.clear();
+}
+
+/** Round-trips one request to the companion, resolving when `set` settles. */
+function companionRequest(set, payload, timeoutMs = 4000) {
+  if (!ensureCompanionPort()) {
+    return Promise.reject(new Error("companion unavailable"));
+  }
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject, timer: null };
+    waiter.timer = setTimeout(() => {
+      set.delete(waiter);
+      reject(new Error("companion did not respond in time"));
+    }, timeoutMs);
+    set.add(waiter);
+    if (!send(payload)) {
+      clearTimeout(waiter.timer);
+      set.delete(waiter);
+      reject(new Error("could not send request to companion"));
+    }
+  });
+}
+
+function requestDiagnostic() {
+  return companionRequest(diagnosticWaiters, { action: "diagnostic" });
+}
+
+function pingCompanion() {
+  return companionRequest(pingWaiters, { action: "ping" });
 }
 
 function onCompanionMessage(msg) {
@@ -174,6 +235,10 @@ function onCompanionMessage(msg) {
       break;
     }
     case "pong":
+      settleWaiters(pingWaiters, true);
+      break;
+    case "diagnostic":
+      settleWaiters(diagnosticWaiters, msg);
       break;
     default:
       console.warn("[OnionRouter] unknown companion message:", msg);
@@ -191,6 +256,9 @@ function onCompanionDisconnect(port) {
     setStatus("disconnected", { socksPort: null });
     settleReady(null, new Error("companion disconnected"));
   }
+  const disconnectError = new Error((error && error.message) || "companion disconnected");
+  rejectWaiters(diagnosticWaiters, disconnectError);
+  rejectWaiters(pingWaiters, disconnectError);
   companionPort = null;
 }
 
@@ -444,6 +512,16 @@ browser.runtime.onMessage.addListener((msg) => {
   switch (msg.type) {
     case "get-state":
       return Promise.resolve(getState());
+    case "get-diagnostic":
+      return requestDiagnostic().then(
+        (diagnostic) => ({ ok: true, diagnostic, state: getState() }),
+        (err) => ({ ok: false, reason: String((err && err.message) || err), state: getState() })
+      );
+    case "ping-companion":
+      return pingCompanion().then(
+        () => ({ ok: true }),
+        (err) => ({ ok: false, reason: String((err && err.message) || err) })
+      );
     case "start-tor":
       connectCompanion();
       return Promise.resolve(getState());

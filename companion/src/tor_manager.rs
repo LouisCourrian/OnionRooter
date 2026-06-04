@@ -70,6 +70,17 @@ const KNOWN_BUNDLES: &[Bundle] = &[
     },
 ];
 
+/// Host platform string for diagnostics, e.g. "windows/x86_64".
+pub fn host_platform() -> String {
+    format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// Tor data directory (best-effort), independent of bundle resolution so it
+/// can be surfaced in diagnostics even on unsupported platforms.
+pub fn data_dir() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|d| d.join("OnionRouter").join("tor").join("data"))
+}
+
 /// Resolve the bundle matching the host platform.
 fn bundle_for_host() -> Result<&'static Bundle> {
     let platform = match (std::env::consts::OS, std::env::consts::ARCH) {

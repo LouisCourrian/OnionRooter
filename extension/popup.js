@@ -30,6 +30,7 @@ const els = {
 
   startBtn: document.getElementById("start-btn"),
   stopBtn: document.getElementById("stop-btn"),
+  diagnosticsBtn: document.getElementById("diagnostics-btn"),
 };
 
 let lastState = null;
@@ -158,3 +159,8 @@ els.startBtn.addEventListener("click", () =>
 els.stopBtn.addEventListener("click", () =>
   browser.runtime.sendMessage({ type: "stop-tor" })
 );
+
+els.diagnosticsBtn.addEventListener("click", () => {
+  browser.tabs.create({ url: browser.runtime.getURL("diagnostics.html") });
+  window.close();
+});
