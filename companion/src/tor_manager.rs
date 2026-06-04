@@ -23,7 +23,7 @@ use tracing::{debug, error, info, warn};
 ///   4. Copy the hashes for the four expert-bundle archives into
 ///      [`KNOWN_BUNDLES`] below.
 ///   5. Bump [`BUNDLE_VERSION`] and the companion crate version.
-pub const BUNDLE_VERSION: &str = "15.0.13";
+pub const BUNDLE_VERSION: &str = "15.0.15";
 
 /// Minimum Tor binary version this companion will reuse from an
 /// externally-running instance (see `tor_detector.rs`). Older versions
@@ -32,7 +32,7 @@ pub const MIN_REUSABLE_TOR_VERSION: (u32, u32, u32, u32) = (0, 4, 7, 0);
 
 /// One bundle per supported platform. SHA-256 hashes are the official ones
 /// published by The Tor Project at
-/// <https://dist.torproject.org/torbrowser/15.0.13/sha256sums-signed-build.txt>.
+/// <https://dist.torproject.org/torbrowser/15.0.15/sha256sums-signed-build.txt>.
 #[derive(Debug, Clone, Copy)]
 pub struct Bundle {
     pub platform: &'static str,
@@ -46,26 +46,26 @@ pub struct Bundle {
 const KNOWN_BUNDLES: &[Bundle] = &[
     Bundle {
         platform: "windows-x86_64",
-        url: "https://dist.torproject.org/torbrowser/15.0.13/tor-expert-bundle-windows-x86_64-15.0.13.tar.gz",
-        sha256: "50599447f20c1124ada1d212370d9a006a8ffb0ff0eabc1d4e86339501ca9734",
+        url: "https://dist.torproject.org/torbrowser/15.0.15/tor-expert-bundle-windows-x86_64-15.0.15.tar.gz",
+        sha256: "8d3daf579192f3f128c0f42553dd994c640501b4b98682216d807c88004f7a96",
         binary_subpath: "tor/tor.exe",
     },
     Bundle {
         platform: "linux-x86_64",
-        url: "https://dist.torproject.org/torbrowser/15.0.13/tor-expert-bundle-linux-x86_64-15.0.13.tar.gz",
-        sha256: "4a46209aaf37a55abd88656a3122bb04305f6cc2a0e39acef70db92485c790f9",
+        url: "https://dist.torproject.org/torbrowser/15.0.15/tor-expert-bundle-linux-x86_64-15.0.15.tar.gz",
+        sha256: "ffc4528394442c3b33a9ccece3536511a3992c78e704756693bed7a2297ef0e7",
         binary_subpath: "tor/tor",
     },
     Bundle {
         platform: "macos-x86_64",
-        url: "https://dist.torproject.org/torbrowser/15.0.13/tor-expert-bundle-macos-x86_64-15.0.13.tar.gz",
-        sha256: "fe0d2417e69e308a9186bea7e87f5166bc0bf9097df998ff6cd3b4dddd607ee6",
+        url: "https://dist.torproject.org/torbrowser/15.0.15/tor-expert-bundle-macos-x86_64-15.0.15.tar.gz",
+        sha256: "664ba99389b73bc4264b0ec1dfec247b444e4ce664ea7e19d4b58081bc87cf3c",
         binary_subpath: "tor/tor",
     },
     Bundle {
         platform: "macos-aarch64",
-        url: "https://dist.torproject.org/torbrowser/15.0.13/tor-expert-bundle-macos-aarch64-15.0.13.tar.gz",
-        sha256: "03664fe91127345cab710b92ca0cd693345242438de26d9c9da16d208c7325f3",
+        url: "https://dist.torproject.org/torbrowser/15.0.15/tor-expert-bundle-macos-aarch64-15.0.15.tar.gz",
+        sha256: "9afb993d5d505a1cfb62d3119c25cf07674d7e9305a9a87116dcdff36c64e054",
         binary_subpath: "tor/tor",
     },
 ];

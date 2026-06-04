@@ -152,7 +152,7 @@ mod tests {
                 socks_port: Some(9050),
                 control_port: Some(9051),
                 tor_version: None,
-                bundle_version: "15.0.13".into(),
+                bundle_version: "15.0.15".into(),
                 companion_version: "0.2.2".into(),
                 platform: "linux/x86_64".into(),
                 data_dir: Some("/home/u/.local/share/OnionRouter/tor/data".into()),
@@ -165,6 +165,6 @@ mod tests {
         assert!(body.contains("\"status\":\"diagnostic\""));
         assert!(body.contains("\"source\":\"owned\""));
         assert!(body.contains("\"tor_version\":null"));
-        assert!(body.contains("\"bundle_version\":\"15.0.13\""));
+        assert!(body.contains("\"bundle_version\":\"15.0.15\""));
     }
 }
