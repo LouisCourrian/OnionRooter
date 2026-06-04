@@ -1,16 +1,2 @@
-# Normalize line endings across platforms
-* text=auto eol=lf
-
-# Force CRLF for Windows-specific scripts
-*.bat       text eol=crlf
-*.cmd       text eol=crlf
-*.ps1       text eol=crlf
-
-# Treat as binary
-*.png       binary
-*.jpg       binary
-*.ico       binary
-*.exe       binary
-*.dll       binary
-*.so        binary
-*.dylib     binary
+# PGP armored keys: preserve bytes exactly (no EOL normalization)
+*.asc -text

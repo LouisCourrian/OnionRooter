@@ -1,6 +1,6 @@
 [package]
 name = "onionrouter-companion"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "Native Messaging companion for the OnionRouter Firefox extension"
 license = "MIT"
@@ -23,6 +23,7 @@ thiserror = "1"
 dirs = "5"
 flate2 = "1"
 tar = "0.4"
+pgp = "0.19"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"

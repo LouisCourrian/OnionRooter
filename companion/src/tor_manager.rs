@@ -96,6 +96,51 @@ fn bundle_for_host() -> Result<&'static Bundle> {
         .ok_or_else(|| anyhow!("no bundle entry for platform {platform}"))
 }
 
+/// A concrete bundle to install: either the pinned fallback or a newer
+/// version resolved (and PGP-verified) at runtime by `tor_update`.
+#[derive(Debug, Clone)]
+pub struct ResolvedBundle {
+    pub version: String,
+    pub url: String,
+    /// Hex-encoded lowercase SHA-256 of the archive.
+    pub sha256: String,
+    pub binary_subpath: &'static str,
+    /// Platform slug, e.g. "windows-x86_64".
+    pub platform: &'static str,
+}
+
+impl ResolvedBundle {
+    /// Placeholder for an unsupported host. The empty version makes the
+    /// install path bail with the usual "unsupported platform" error.
+    pub fn unsupported() -> Self {
+        Self {
+            version: String::new(),
+            url: String::new(),
+            sha256: String::new(),
+            binary_subpath: "",
+            platform: "",
+        }
+    }
+}
+
+/// The hard-pinned, known-good bundle for this host. Always available offline
+/// and used as the auto-update fallback.
+pub fn pinned_bundle() -> Result<ResolvedBundle> {
+    let b = bundle_for_host()?;
+    Ok(ResolvedBundle {
+        version: BUNDLE_VERSION.to_string(),
+        url: b.url.to_string(),
+        sha256: b.sha256.to_string(),
+        binary_subpath: b.binary_subpath,
+        platform: b.platform,
+    })
+}
+
+/// Path to the generated torrc (version-independent).
+pub fn torrc_path() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|d| d.join("OnionRouter").join("tor").join("torrc"))
+}
+
 /// Paths used by the companion on disk.
 pub struct TorPaths {
     /// Root: `%APPDATA%\OnionRouter\tor\` on Windows, `~/.local/share/onionrouter/tor/` on Linux.
@@ -106,30 +151,21 @@ pub struct TorPaths {
     pub extracted: PathBuf,
     /// Full path to the Tor binary.
     pub binary: PathBuf,
-    /// Tor's data directory.
-    pub data_dir: PathBuf,
-    /// Generated torrc.
-    pub torrc: PathBuf,
 }
 
 impl TorPaths {
-    pub fn resolve(bundle: &Bundle) -> Result<Self> {
+    /// Paths for a specific bundle version. The version keys the install root
+    /// so multiple Tor versions can coexist during an upgrade.
+    pub fn resolve(version: &str, archive_name: &str, binary_subpath: &str) -> Result<Self> {
         let base = dirs::data_local_dir()
             .ok_or_else(|| anyhow!("could not determine local data dir"))?
             .join("OnionRouter")
             .join("tor");
-        let root = base.join(BUNDLE_VERSION);
+        let root = base.join(version);
         let extracted = root.join("extracted");
-        let archive_name = bundle
-            .url
-            .rsplit('/')
-            .next()
-            .unwrap_or("tor-expert-bundle.tar.gz");
         Ok(Self {
             archive: root.join(archive_name),
-            binary: extracted.join(bundle.binary_subpath),
-            data_dir: base.join("data"),
-            torrc: base.join("torrc"),
+            binary: extracted.join(binary_subpath),
             extracted,
             root,
         })
@@ -138,29 +174,63 @@ impl TorPaths {
 
 /// Ensure the Tor binary is installed and integrity-verified.
 /// Returns the absolute path to the executable.
+///
+/// Resolves the bundle via `tor_update` (latest PGP-verified version when
+/// reachable, pinned otherwise). If installing a newer version fails for any
+/// reason, falls back to the pinned bundle so the companion never breaks.
 pub async fn ensure_binary() -> Result<PathBuf> {
-    let bundle = bundle_for_host()?;
-    let paths = TorPaths::resolve(bundle)?;
+    let resolved = crate::tor_update::resolve_bundle().await;
+    match install_from(&resolved).await {
+        Ok(path) => Ok(path),
+        Err(e) => {
+            let pinned = pinned_bundle()?;
+            if resolved.version != pinned.version {
+                warn!(
+                    "installing Tor {} failed ({e:#}); falling back to pinned {}",
+                    resolved.version, pinned.version
+                );
+                install_from(&pinned).await
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+/// Download, verify and extract a specific resolved bundle. Idempotent: if the
+/// binary is already present it returns immediately.
+async fn install_from(b: &ResolvedBundle) -> Result<PathBuf> {
+    if b.version.is_empty() {
+        bail!(
+            "unsupported platform: {}/{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        );
+    }
+
+    let archive_name = b
+        .url
+        .rsplit('/')
+        .next()
+        .unwrap_or("tor-expert-bundle.tar.gz");
+    let paths = TorPaths::resolve(&b.version, archive_name, b.binary_subpath)?;
 
     if paths.binary.exists() {
         debug!("Tor binary already present at {}", paths.binary.display());
         return Ok(paths.binary);
     }
 
-    info!(
-        "Tor binary missing — downloading expert bundle for {}",
-        bundle.platform
-    );
+    info!("Tor binary missing — installing expert bundle {} ({})", b.version, b.platform);
 
     fs::create_dir_all(&paths.root)
         .await
         .with_context(|| format!("creating {}", paths.root.display()))?;
 
     if !paths.archive.exists() {
-        download(bundle.url, &paths.archive).await?;
+        download(&b.url, &paths.archive).await?;
     }
 
-    verify_sha256(&paths.archive, bundle.sha256).await?;
+    verify_sha256(&paths.archive, &b.sha256).await?;
     extract_tar_gz(&paths.archive, &paths.extracted).await?;
 
     if !paths.binary.exists() {
@@ -256,9 +326,9 @@ pub async fn launch(
     control_port: u16,
     bootstrap_timeout: Duration,
 ) -> Result<LaunchedTor> {
-    let bundle = bundle_for_host()?;
-    let paths = TorPaths::resolve(bundle)?;
-    fs::create_dir_all(&paths.data_dir).await?;
+    let data_dir = data_dir().ok_or_else(|| anyhow!("could not determine local data dir"))?;
+    let torrc_file = torrc_path().ok_or_else(|| anyhow!("could not determine local data dir"))?;
+    fs::create_dir_all(&data_dir).await?;
 
     let torrc = format!(
         "SocksPort {socks_port}\n\
@@ -267,9 +337,9 @@ pub async fn launch(
          DataDirectory {data_dir}\n\
          AvoidDiskWrites 1\n\
          Log notice stdout\n",
-        data_dir = paths.data_dir.display(),
+        data_dir = data_dir.display(),
     );
-    fs::write(&paths.torrc, torrc).await?;
+    fs::write(&torrc_file, torrc).await?;
 
     info!(
         "spawning Tor: SocksPort={socks_port} ControlPort={control_port}"
@@ -277,7 +347,7 @@ pub async fn launch(
 
     let mut cmd = Command::new(binary);
     cmd.arg("-f")
-        .arg(&paths.torrc)
+        .arg(&torrc_file)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null())

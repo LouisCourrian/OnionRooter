@@ -21,6 +21,7 @@ mod proxy;
 mod runtime;
 mod tor_detector;
 mod tor_manager;
+mod tor_update;
 
 #[cfg(windows)]
 mod tray;

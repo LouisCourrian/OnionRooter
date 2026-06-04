@@ -3,7 +3,7 @@
 Extension Firefox + companion Rust pour utiliser Tor depuis Firefox sans
 installer Tor Browser.
 
-Version de travail: `0.2.4`.
+Version de travail: `0.3.0`.
 
 ## 1. Objectif
 
@@ -49,7 +49,7 @@ Installers / packages
 | F8 | Arret propre de Tor | Fait partiel | Native Messaging arrete son Tor; tray Windows le garde volontairement vivant. |
 | F9 | Bouton marche/arret manuel | Fait | Popup start/stop. |
 | F10 | Notification premier lancement | Non fait | Pas prioritaire pour `0.2.2`. |
-| F11 | Mise a jour automatique de Tor | Non fait | Version Tor pinnee manuellement. |
+| F11 | Mise a jour automatique de Tor | Fait | Derniere version, sommes verifiees PGP, fallback pinne. |
 | F12 | Page de diagnostic | Fait | Page extension + action `diagnostic` du companion. |
 | F13 | Mode "Tout via Tor" | Fait | Tout le trafic Firefox passe par Tor. |
 | F14 | Mode "Whitelist" | Fait | Domaines choisis + `.onion`. |
@@ -140,7 +140,7 @@ Messages companion vers Firefox:
   "control_port": 9051,
   "tor_version": null,
   "bundle_version": "15.0.15",
-  "companion_version": "0.2.4",
+  "companion_version": "0.3.0",
   "platform": "windows/x86_64",
   "data_dir": "..."
 }
@@ -162,6 +162,14 @@ Le companion connait les bundles:
 
 La verification SHA-256 est obligatoire. Une archive inconnue ou modifiee est
 refusee.
+
+Mise a jour automatique (F11): au demarrage, le companion decouvre la derniere
+version stable sur `dist.torproject.org`, telecharge `sha256sums-signed-build.txt`
+et sa signature `.asc`, **verifie la signature PGP** contre la cle de build Tor
+embarquee dans le binaire (`companion/assets/tor-signing-key.asc`), puis utilise
+le hash de la plateforme. Toute erreur (hors ligne, signature invalide) bascule
+sur la version pinnee connue-bonne: la maj auto ne peut jamais casser le
+companion. Voir `companion/src/tor_update.rs`.
 
 ### 5.5 Detection de Tor existant
 

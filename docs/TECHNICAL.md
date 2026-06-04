@@ -65,6 +65,7 @@ Fichiers principaux:
 - `main.rs`: entree, mode Native Messaging et dispatch Windows tray.
 - `messaging.rs`: framing Native Messaging Mozilla.
 - `tor_manager.rs`: telechargement, verification, extraction, lancement Tor.
+- `tor_update.rs`: maj auto -- decouverte derniere version + verif PGP des sommes.
 - `tor_detector.rs`: verification d'une instance Tor externe.
 - `proxy.rs`: allocation de ports SOCKS/Control.
 - `runtime.rs`: fichier d'etat partage entre le tray et Native Messaging.
@@ -102,7 +103,7 @@ Messages companion vers extension:
 { "status": "pong" }
 { "status": "diagnostic", "running": true, "source": "owned",
   "socks_port": 9050, "control_port": 9051, "tor_version": null,
-  "bundle_version": "15.0.15", "companion_version": "0.2.4",
+  "bundle_version": "15.0.15", "companion_version": "0.3.0",
   "platform": "windows/x86_64", "data_dir": "..." }
 ```
 
@@ -164,6 +165,22 @@ Stockage Tor:
 - macOS: repertoire local data retourne par `dirs`
 
 Le companion refuse d'executer une archive si le SHA-256 ne correspond pas.
+
+### Mise a jour automatique (F11)
+
+`tor_update.rs` evite que la version pinnee se perime (les vieilles versions
+sont purgees du miroir Tor, d'ou des 404):
+
+1. decouvre la derniere version stable (parse du listing `dist.torproject.org`);
+2. si > version pinnee: telecharge `sha256sums-signed-build.txt` + `.asc`;
+3. **verifie la signature PGP** contre la cle de build Tor embarquee
+   (`assets/tor-signing-key.asc`, sous-cle `CAAE408A…78A65729`), via le crate
+   `pgp` (rPGP, pur Rust) -- essai cle primaire puis sous-cles;
+4. extrait le hash de la plateforme et installe le bundle (verif SHA-256).
+
+Toute erreur (hors ligne, parse, signature invalide, download) bascule sur la
+version pinnee: la maj auto ne peut pas casser le companion. Les versions
+coexistent sous `tor/<version>/` le temps d'un upgrade.
 
 ## Detection d'un Tor existant
 
@@ -237,12 +254,12 @@ La version est synchronisee manuellement dans:
 Pour publier:
 
 ```bash
-git tag v0.2.4
-git push origin v0.2.4
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 Le workflow refuse un tag qui ne correspond pas a la version du manifest, sauf
-suffixe de prerelease (`v0.2.4-rc1`).
+suffixe de prerelease (`v0.3.0-rc1`).
 
 ## Signature des releases
 
@@ -290,8 +307,8 @@ gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt        # ou Get-FileHash sous Windows
 
 # Debian:
-gpg --verify onionrouter-companion_0.2.4_amd64.deb.asc \
-            onionrouter-companion_0.2.4_amd64.deb
+gpg --verify onionrouter-companion_0.3.0_amd64.deb.asc \
+            onionrouter-companion_0.3.0_amd64.deb
 ```
 
 ## Validation locale
@@ -315,8 +332,8 @@ Debian package, sur Linux:
 ```bash
 python3 --version
 bash installer/linux/build-deb.sh
-dpkg-deb --info dist/onionrouter-companion_0.2.4_amd64.deb
-dpkg-deb --contents dist/onionrouter-companion_0.2.4_amd64.deb
+dpkg-deb --info dist/onionrouter-companion_0.3.0_amd64.deb
+dpkg-deb --contents dist/onionrouter-companion_0.3.0_amd64.deb
 ```
 
 ## Limites connues
