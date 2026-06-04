@@ -102,7 +102,7 @@ Messages companion vers extension:
 { "status": "pong" }
 { "status": "diagnostic", "running": true, "source": "owned",
   "socks_port": 9050, "control_port": 9051, "tor_version": null,
-  "bundle_version": "15.0.13", "companion_version": "0.2.2",
+  "bundle_version": "15.0.13", "companion_version": "0.2.3",
   "platform": "windows/x86_64", "data_dir": "..." }
 ```
 
@@ -237,12 +237,12 @@ La version est synchronisee manuellement dans:
 Pour publier:
 
 ```bash
-git tag v0.2.2
-git push origin v0.2.2
+git tag v0.2.3
+git push origin v0.2.3
 ```
 
 Le workflow refuse un tag qui ne correspond pas a la version du manifest, sauf
-suffixe de prerelease (`v0.2.2-rc1`).
+suffixe de prerelease (`v0.2.3-rc1`).
 
 ## Signature des releases
 
@@ -290,8 +290,8 @@ gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt        # ou Get-FileHash sous Windows
 
 # Debian:
-gpg --verify onionrouter-companion_0.2.2_amd64.deb.asc \
-            onionrouter-companion_0.2.2_amd64.deb
+gpg --verify onionrouter-companion_0.2.3_amd64.deb.asc \
+            onionrouter-companion_0.2.3_amd64.deb
 ```
 
 ## Validation locale
@@ -315,8 +315,8 @@ Debian package, sur Linux:
 ```bash
 python3 --version
 bash installer/linux/build-deb.sh
-dpkg-deb --info dist/onionrouter-companion_0.2.2_amd64.deb
-dpkg-deb --contents dist/onionrouter-companion_0.2.2_amd64.deb
+dpkg-deb --info dist/onionrouter-companion_0.2.3_amd64.deb
+dpkg-deb --contents dist/onionrouter-companion_0.2.3_amd64.deb
 ```
 
 ## Limites connues

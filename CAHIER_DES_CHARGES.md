@@ -3,7 +3,7 @@
 Extension Firefox + companion Rust pour utiliser Tor depuis Firefox sans
 installer Tor Browser.
 
-Version de travail: `0.2.2`.
+Version de travail: `0.2.3`.
 
 ## 1. Objectif
 
@@ -140,7 +140,7 @@ Messages companion vers Firefox:
   "control_port": 9051,
   "tor_version": null,
   "bundle_version": "15.0.13",
-  "companion_version": "0.2.2",
+  "companion_version": "0.2.3",
   "platform": "windows/x86_64",
   "data_dir": "..."
 }

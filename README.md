@@ -11,7 +11,7 @@ WebRTC settings.
 
 ## Status
 
-Version: `0.2.2`.
+Version: `0.2.3`.
 
 Phases 1-3 are implemented and validated end-to-end:
 

@@ -6,7 +6,7 @@
 ; the host, and bundles the (eventually signed) XPI alongside.
 ;
 ; Build:
-;   makensis /DAPP_VERSION=0.2.2 /DREPO_ROOT=Z:\path\to\repo onionrouter.nsi
+;   makensis /DAPP_VERSION=0.2.3 /DREPO_ROOT=Z:\path\to\repo onionrouter.nsi
 ;
 ; (Driven by installer\build.ps1 — don't invoke makensis by hand normally.)
 
