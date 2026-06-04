@@ -80,7 +80,19 @@ jobs:
         # Skipped automatically when GPG_SIGNING_KEY is not configured.
         if: env.GPG_PRIVATE_KEY != ''
         run: |
-          $env:GPG_PRIVATE_KEY | gpg --batch --import
+          $ErrorActionPreference = "Stop"
+          # Isolated keyring so we control the agent config.
+          $gnupg = Join-Path $env:RUNNER_TEMP "gnupg"
+          New-Item -ItemType Directory -Force -Path $gnupg | Out-Null
+          $env:GNUPGHOME = $gnupg
+          "allow-loopback-pinentry" | Out-File -FilePath (Join-Path $gnupg "gpg-agent.conf") -Encoding ascii
+          gpg --version | Select-Object -First 1
+          # Import the private key from a file to avoid PowerShell pipe re-encoding.
+          $keyFile = Join-Path $env:RUNNER_TEMP "signing-key.asc"
+          [System.IO.File]::WriteAllText($keyFile, $env:GPG_PRIVATE_KEY)
+          gpg --batch --import $keyFile
+          Remove-Item $keyFile -Force
+          gpg --list-secret-keys --keyid-format=long
           gpg --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" `
             --armor --detach-sign --output dist/SHA256SUMS.txt.asc dist/SHA256SUMS.txt
           gpg --verify dist/SHA256SUMS.txt.asc dist/SHA256SUMS.txt
@@ -170,7 +182,14 @@ jobs:
         # Skipped automatically when GPG_SIGNING_KEY is not configured.
         if: env.GPG_PRIVATE_KEY != ''
         run: |
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          set -euo pipefail
+          # Isolated keyring so we control the agent config.
+          export GNUPGHOME="$(mktemp -d)"
+          echo "allow-loopback-pinentry" > "$GNUPGHOME/gpg-agent.conf"
+          gpgconf --kill gpg-agent || true
+          gpg --version | head -n 1
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format=long
           deb="${{ steps.meta.outputs.deb }}"
           gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
             --armor --detach-sign --output "$deb.asc" "$deb"
