@@ -197,8 +197,9 @@ La detection ne se limite pas a un port ouvert. Elle verifie le Control Port:
 3. `GETINFO version`.
 4. Version minimale `0.4.7.0`.
 
-`SAFECOOKIE` et `HASHEDPASSWORD` sont detectes mais non reutilises pour le
-moment. Le companion lance alors son propre Tor.
+`SAFECOOKIE` est supporte (challenge/reponse HMAC-SHA256, control-spec §3.24),
+ce qui permet de reutiliser le Tor d'un Tor Browser ouvert. `HASHEDPASSWORD`
+n'est pas supporte: le companion lance alors son propre Tor.
 
 ## Fichier runtime du tray
 

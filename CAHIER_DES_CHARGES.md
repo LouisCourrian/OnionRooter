@@ -188,8 +188,9 @@ Verification:
 4. `GETINFO version`.
 5. Version minimale `0.4.7.0`.
 
-`SAFECOOKIE` et `HASHEDPASSWORD` ne sont pas encore supportes pour la
-reutilisation. Le companion lance alors son propre Tor.
+`SAFECOOKIE` est supporte (challenge HMAC-SHA256), ce qui permet de reutiliser
+un Tor Browser deja ouvert. `HASHEDPASSWORD` n'est pas supporte: le companion
+lance alors son propre Tor.
 
 ## 6. Distribution
 

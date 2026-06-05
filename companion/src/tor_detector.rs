@@ -5,13 +5,14 @@
 //! 1. For each `(socks_port, control_port)` in `KNOWN_PAIRS`:
 //!    a. Open a TCP connection to `127.0.0.1:control_port`.
 //!    b. Send `PROTOCOLINFO 1` to discover supported auth methods.
-//!    c. Authenticate (NULL → COOKIE → give up if only SAFECOOKIE/HASHEDPASS).
+//!    c. Authenticate (NULL → SAFECOOKIE → COOKIE; HASHEDPASSWORD unsupported).
 //!    d. Send `GETINFO version`, parse the response.
 //!    e. Compare against `MIN_REUSABLE_TOR_VERSION`.
 //!    f. If all checks pass, return the pair.
 //! 2. If nothing matches, return `None` → caller launches its own Tor.
 
 use anyhow::{bail, Context, Result};
+use rand::RngCore;
 use std::path::PathBuf;
 use std::time::Duration as StdDuration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -197,13 +198,29 @@ async fn authenticate(
     write: &mut tokio::net::tcp::OwnedWriteHalf,
     auth: &AuthInfo,
 ) -> Result<bool> {
-    // NULL auth: no arg.
+    // NULL auth: no auth configured, just send AUTHENTICATE.
     if auth.null {
         write.write_all(b"AUTHENTICATE\r\n").await?;
         return await_ok(reader).await;
     }
 
-    // Cookie auth: read 32-byte cookie file, hex-encode.
+    // SAFECOOKIE preferred over raw COOKIE: it proves the cookie file to the
+    // server without sending it in the clear, and it's what Tor Browser uses.
+    if auth.safe_cookie {
+        if let Some(path) = &auth.cookie_file {
+            match safecookie_auth(reader, write, path).await {
+                Ok(ok) => return Ok(ok),
+                // A failed challenge leaves the connection in an unknown state,
+                // so don't try another method on it -- let the caller fall back.
+                Err(e) => {
+                    debug!("SAFECOOKIE auth failed: {e:#}");
+                    return Ok(false);
+                }
+            }
+        }
+    }
+
+    // Raw COOKIE: read the 32-byte cookie file and send it hex-encoded.
     if auth.cookie {
         if let Some(path) = &auth.cookie_file {
             match tokio::fs::read(path).await {
@@ -220,10 +237,102 @@ async fn authenticate(
         }
     }
 
-    // SAFECOOKIE / HASHEDPASSWORD: too complex for MVP. Phase 4 may add
-    // SAFECOOKIE (HMAC challenge-response). For now, refuse rather than
-    // reuse a Tor we can't authenticate to.
+    // HASHEDPASSWORD needs a password we don't have. Refuse.
     Ok(false)
+}
+
+/// SAFECOOKIE handshake (control-spec §3.24): prove knowledge of the cookie
+/// file via an HMAC challenge/response, without sending the cookie in clear.
+async fn safecookie_auth(
+    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+    write: &mut tokio::net::tcp::OwnedWriteHalf,
+    cookie_path: &std::path::Path,
+) -> Result<bool> {
+    let cookie = tokio::fs::read(cookie_path)
+        .await
+        .with_context(|| format!("reading cookie file {}", cookie_path.display()))?;
+    if cookie.len() != 32 {
+        bail!("unexpected control cookie length: {} (want 32)", cookie.len());
+    }
+
+    // 1. Send a 32-byte client nonce.
+    let mut client_nonce = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut client_nonce);
+    let cmd = format!("AUTHCHALLENGE SAFECOOKIE {}\r\n", hex::encode(client_nonce));
+    write.write_all(cmd.as_bytes()).await?;
+
+    // 2. Read SERVERHASH / SERVERNONCE from the AUTHCHALLENGE reply.
+    let mut server_hash_hex: Option<String> = None;
+    let mut server_nonce_hex: Option<String> = None;
+    let ok = read_response(reader, |line| {
+        let rest = line
+            .strip_prefix("250 AUTHCHALLENGE ")
+            .or_else(|| line.strip_prefix("250-AUTHCHALLENGE "));
+        if let Some(rest) = rest {
+            for tok in rest.split_whitespace() {
+                if let Some(v) = tok.strip_prefix("SERVERHASH=") {
+                    server_hash_hex = Some(v.to_string());
+                } else if let Some(v) = tok.strip_prefix("SERVERNONCE=") {
+                    server_nonce_hex = Some(v.to_string());
+                }
+            }
+        }
+    })
+    .await?;
+    if !ok {
+        return Ok(false);
+    }
+
+    let server_hash =
+        hex::decode(server_hash_hex.context("AUTHCHALLENGE without SERVERHASH")?)
+            .context("decoding SERVERHASH")?;
+    let server_nonce =
+        hex::decode(server_nonce_hex.context("AUTHCHALLENGE without SERVERNONCE")?)
+            .context("decoding SERVERNONCE")?;
+
+    // 3. message = CookieString | ClientNonce | ServerNonce
+    let mut msg = Vec::with_capacity(cookie.len() + client_nonce.len() + server_nonce.len());
+    msg.extend_from_slice(&cookie);
+    msg.extend_from_slice(&client_nonce);
+    msg.extend_from_slice(&server_nonce);
+
+    // 4. Verify the server proved knowledge of the cookie (authenticates Tor
+    //    to us). Constant-time compare.
+    let expected = hmac_sha256(
+        b"Tor safe cookie authentication server-to-controller hash",
+        &msg,
+    );
+    if !ct_eq(&expected, &server_hash) {
+        bail!("SERVERHASH mismatch -- control port did not prove the cookie");
+    }
+
+    // 5. Send our proof and expect 250 OK.
+    let client_hash = hmac_sha256(
+        b"Tor safe cookie authentication controller-to-server hash",
+        &msg,
+    );
+    let cmd = format!("AUTHENTICATE {}\r\n", hex::encode(client_hash));
+    write.write_all(cmd.as_bytes()).await?;
+    await_ok(reader).await
+}
+
+fn hmac_sha256(key: &[u8], msg: &[u8]) -> Vec<u8> {
+    use hmac::{Hmac, Mac};
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(key).expect("HMAC accepts any key length");
+    mac.update(msg);
+    mac.finalize().into_bytes().to_vec()
+}
+
+/// Constant-time byte-slice equality.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 async fn ask_version(
@@ -361,5 +470,22 @@ mod tests {
         a.parse_line("250-AUTH METHODS=HASHEDPASSWORD");
         assert!(a.hashed_password);
         assert!(!a.null);
+    }
+
+    #[test]
+    fn hmac_sha256_rfc4231_case2() {
+        // RFC 4231 test case 2 -- validates our HMAC wiring used by SAFECOOKIE.
+        let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
+        assert_eq!(
+            hex::encode(mac),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
+    }
+
+    #[test]
+    fn ct_eq_compares() {
+        assert!(ct_eq(b"abc", b"abc"));
+        assert!(!ct_eq(b"abc", b"abd"));
+        assert!(!ct_eq(b"abc", b"ab"));
     }
 }
