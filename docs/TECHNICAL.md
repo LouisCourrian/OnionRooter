@@ -104,7 +104,7 @@ Messages companion vers extension:
 { "status": "pong" }
 { "status": "diagnostic", "running": true, "source": "owned",
   "socks_port": 9050, "control_port": 9051, "tor_version": null,
-  "bundle_version": "15.0.15", "companion_version": "0.3.0",
+  "bundle_version": "15.0.15", "companion_version": "0.4.0",
   "platform": "windows/x86_64", "data_dir": "..." }
 ```
 
@@ -256,12 +256,12 @@ La version est synchronisee manuellement dans:
 Pour publier:
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 Le workflow refuse un tag qui ne correspond pas a la version du manifest, sauf
-suffixe de prerelease (`v0.3.0-rc1`).
+suffixe de prerelease (`v0.4.0-rc1`).
 
 ## Signature des releases
 
@@ -309,8 +309,8 @@ gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt        # ou Get-FileHash sous Windows
 
 # Debian:
-gpg --verify onionrouter-companion_0.3.0_amd64.deb.asc \
-            onionrouter-companion_0.3.0_amd64.deb
+gpg --verify onionrouter-companion_0.4.0_amd64.deb.asc \
+            onionrouter-companion_0.4.0_amd64.deb
 ```
 
 ## Validation locale
@@ -334,8 +334,8 @@ Debian package, sur Linux:
 ```bash
 python3 --version
 bash installer/linux/build-deb.sh
-dpkg-deb --info dist/onionrouter-companion_0.3.0_amd64.deb
-dpkg-deb --contents dist/onionrouter-companion_0.3.0_amd64.deb
+dpkg-deb --info dist/onionrouter-companion_0.4.0_amd64.deb
+dpkg-deb --contents dist/onionrouter-companion_0.4.0_amd64.deb
 ```
 
 ## Limites connues

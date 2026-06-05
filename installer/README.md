@@ -27,8 +27,8 @@ Recommended flow:
 
 ```cmd
 cd <repo>
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 This triggers `.github/workflows/release.yml`.

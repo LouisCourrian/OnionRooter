@@ -92,16 +92,34 @@ impl State {
         let info = self.info.as_ref();
         OutboundMessage::Diagnostic {
             running: self.backend.is_some(),
-            source: info.map(|i| i.source.to_string()),
+            source: info.map(effective_source),
             socks_port: info.map(|i| i.socks_port),
             control_port: info.map(|i| i.control_port),
             tor_version: info.and_then(|i| i.tor_version.clone()),
-            bundle_version: tor_manager::BUNDLE_VERSION.to_string(),
+            // Report the version actually installed on disk (what auto-update
+            // fetched), falling back to the pinned baseline.
+            bundle_version: tor_manager::installed_version()
+                .unwrap_or_else(|| tor_manager::BUNDLE_VERSION.to_string()),
             companion_version: env!("CARGO_PKG_VERSION").to_string(),
             platform: tor_manager::host_platform(),
             data_dir: tor_manager::data_dir().map(|p| p.display().to_string()),
         }
     }
+}
+
+/// At connect time a Native Messaging instance may probe the tray's own Tor on
+/// 9050 before the tray has written its runtime file, labelling it "external".
+/// By diagnostic-query time the file exists, so relabel to "tray" when a live
+/// tray published the same SOCKS port.
+fn effective_source(i: &DiagInfo) -> String {
+    if i.source == "external" {
+        if let Some(rt) = runtime::read() {
+            if runtime::is_tray_alive(rt.tray_pid) && rt.socks_port == i.socks_port {
+                return "tray".to_string();
+            }
+        }
+    }
+    i.source.to_string()
 }
 
 fn main() -> Result<()> {

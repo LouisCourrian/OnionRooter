@@ -141,6 +141,34 @@ pub fn torrc_path() -> Option<PathBuf> {
     dirs::data_local_dir().map(|d| d.join("OnionRouter").join("tor").join("torrc"))
 }
 
+/// Highest Tor bundle version actually extracted on disk, if any. Reflects
+/// what auto-update installed, so diagnostics can report the real version in
+/// use rather than the pinned baseline.
+pub fn installed_version() -> Option<String> {
+    let base = dirs::data_local_dir()?.join("OnionRouter").join("tor");
+    let mut best: Option<((u32, u32, u32), String)> = None;
+    for entry in std::fs::read_dir(&base).ok()?.flatten() {
+        if !entry.path().join("extracted").is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if let Some(v) = parse_semver(&name) {
+            if best.as_ref().map_or(true, |(b, _)| v > *b) {
+                best = Some((v, name));
+            }
+        }
+    }
+    best.map(|(_, s)| s)
+}
+
+fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
+    let mut it = s.split('.').map(|p| p.parse::<u32>());
+    let a = it.next()?.ok()?;
+    let b = it.next().transpose().ok()?.unwrap_or(0);
+    let c = it.next().transpose().ok()?.unwrap_or(0);
+    Some((a, b, c))
+}
+
 /// Paths used by the companion on disk.
 pub struct TorPaths {
     /// Root: `%APPDATA%\OnionRouter\tor\` on Windows, `~/.local/share/onionrouter/tor/` on Linux.
