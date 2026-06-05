@@ -20,7 +20,8 @@
     "storage",
     "tabs",
     "privacy",
-    "nativeMessaging"
+    "nativeMessaging",
+    "notifications"
   ],
 
   "host_permissions": ["<all_urls>"],

@@ -546,6 +546,29 @@ browser.runtime.onMessage.addListener((msg) => {
   }
 });
 
+// ---------- First-run welcome (F10) -----------------------------------
+
+// Shown once, right after the extension is installed. Explains that Tor is
+// fetched transparently on first use so the initial "slow load" isn't
+// mistaken for a failure. Only fires on a fresh install, not on updates.
+browser.runtime.onInstalled.addListener((details) => {
+  if (details.reason !== "install") return;
+  try {
+    browser.notifications.create("onionrouter-welcome", {
+      type: "basic",
+      iconUrl: browser.runtime.getURL("icons/icon-active-onion.svg"),
+      title: "OnionRouter is ready",
+      message:
+        "Open any .onion address and Tor starts automatically — it's " +
+        "downloaded and verified in the background on first use, so the very " +
+        "first load can take a moment. Click the onion toolbar icon to pick a " +
+        "routing mode.",
+    });
+  } catch (err) {
+    console.warn("[OnionRouter] welcome notification failed:", err && err.message);
+  }
+});
+
 // ---------- Boot -------------------------------------------------------
 
 (async () => {

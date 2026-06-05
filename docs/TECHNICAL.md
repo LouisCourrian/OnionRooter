@@ -44,7 +44,8 @@ Permissions utilisees:
 - `nativeMessaging`: communication avec le companion.
 - `storage`: persistance du mode, whitelist et preference WebRTC.
 - `privacy`: activation/desactivation de WebRTC.
-- `tabs`: ajout du site courant a la whitelist.
+- `tabs`: ajout du site courant a la whitelist + ouverture de la page diagnostic.
+- `notifications`: notification d'accueil au premier lancement (F10).
 - `webRequest` et `<all_urls>`: surface de routage Firefox.
 
 Modes de routage:

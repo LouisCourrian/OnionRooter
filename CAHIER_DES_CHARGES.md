@@ -48,7 +48,7 @@ Installers / packages
 | F7 | Icone d'etat Firefox | Fait | Inactif, demarrage, actif, erreur. |
 | F8 | Arret propre de Tor | Fait partiel | Native Messaging arrete son Tor; tray Windows le garde volontairement vivant. |
 | F9 | Bouton marche/arret manuel | Fait | Popup start/stop. |
-| F10 | Notification premier lancement | Non fait | Pas prioritaire pour `0.2.2`. |
+| F10 | Notification premier lancement | Fait | Notification d'accueil a l'installation (`runtime.onInstalled`). |
 | F11 | Mise a jour automatique de Tor | Fait | Derniere version, sommes verifiees PGP, fallback pinne. |
 | F12 | Page de diagnostic | Fait | Page extension + action `diagnostic` du companion. |
 | F13 | Mode "Tout via Tor" | Fait | Tout le trafic Firefox passe par Tor. |
