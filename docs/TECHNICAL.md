@@ -37,6 +37,10 @@ Fichiers principaux:
 - `extension/popup.html`, `popup.css`, `popup.js`: interface utilisateur.
 - `extension/diagnostics.html`, `diagnostics.css`, `diagnostics.js`: page de
   diagnostic, ouverte depuis le popup dans un onglet.
+- `extension/authorized.html`, `authorized.css`, `authorized.js`: gestion des
+  services proteges (client auth v3).
+- `extension/unlock.html`, `unlock.css`, `unlock.js`: page de deverrouillage
+  interstitielle.
 
 Permissions utilisees:
 
@@ -67,7 +71,9 @@ Fichiers principaux:
 - `messaging.rs`: framing Native Messaging Mozilla.
 - `tor_manager.rs`: telechargement, verification, extraction, lancement Tor.
 - `tor_update.rs`: maj auto -- decouverte derniere version + verif PGP des sommes.
-- `tor_detector.rs`: verification d'une instance Tor externe.
+- `tor_detector.rs`: verification d'une instance Tor externe + control port partage.
+- `client_auth.rs`: autorisation client v3 -- keygen x25519, parse cle, injection.
+- `auth_store.rs`: coffres de cles (DPAPI / passphrase) + index.
 - `proxy.rs`: allocation de ports SOCKS/Control.
 - `runtime.rs`: fichier d'etat partage entre le tray et Native Messaging.
 - `tray.rs`: daemon tray Windows.
@@ -104,7 +110,7 @@ Messages companion vers extension:
 { "status": "pong" }
 { "status": "diagnostic", "running": true, "source": "owned",
   "socks_port": 9050, "control_port": 9051, "tor_version": null,
-  "bundle_version": "15.0.15", "companion_version": "0.4.0",
+  "bundle_version": "15.0.15", "companion_version": "0.5.0",
   "platform": "windows/x86_64", "data_dir": "..." }
 ```
 
@@ -201,6 +207,38 @@ La detection ne se limite pas a un port ouvert. Elle verifie le Control Port:
 ce qui permet de reutiliser le Tor d'un Tor Browser ouvert. `HASHEDPASSWORD`
 n'est pas supporte: le companion lance alors son propre Tor.
 
+## Autorisation client (v3 onion auth)
+
+Acces aux services `.onion` v3 a acces restreint. Tout passe par le companion
+(l'extension ne parle pas le control port).
+
+Stockage (`auth_store.rs`), choisi par cle:
+
+- **OS** (`os-vault.bin`): Windows DPAPI, user-scoped, dechiffrable tant que la
+  session est ouverte. Charge automatiquement au demarrage de Tor.
+- **passphrase** (`pp-vault.bin`): cle derivee par Argon2id, chiffrement
+  XChaCha20-Poly1305. Opaque tant que non deverrouille.
+
+`index.json` (plaintext) liste les metadonnees non secretes. Pour le tier
+passphrase, seule la valeur **SHA-256 de l'adresse** y figure -- l'index au
+repos ne revele donc pas de quels services proteges l'utilisateur est membre.
+
+Injection (`client_auth.rs`): `ONION_CLIENT_AUTH_ADD <addr> x25519:<cle>` via le
+control port (NULL pour le Tor du companion, SAFECOOKIE pour un Tor reutilise),
+**non-permanent** -- reapplique a chaque session. `inject_available` charge les
+cles OS, plus les cles passphrase si le coffre est deverrouille, quand Tor
+devient pret et au deverrouillage.
+
+Protocole native messaging (id-correle, reponse `reply`):
+`auth-list`, `auth-add`, `auth-remove`, `auth-generate`, `auth-set-passphrase`,
+`auth-unlock`, `auth-lock`.
+
+Cote extension: l'index est mis en cache dans `storage.local` (metadonnees non
+secretes). Un listener `webRequest.onBeforeRequest` (bloquant, main-frame)
+redirige une navigation vers un service passphrase **verrouille** vers
+`unlock.html`; apres deverrouillage, la cle est injectee et l'onglet repart sur
+l'adresse d'origine. Aucune cle n'est jamais stockee dans le profil Firefox.
+
 ## Fichier runtime du tray
 
 Le tray Windows peut lancer Tor sur un port libre non standard. Pour que les
@@ -256,12 +294,12 @@ La version est synchronisee manuellement dans:
 Pour publier:
 
 ```bash
-git tag v0.4.0
-git push origin v0.4.0
+git tag v0.5.0
+git push origin v0.5.0
 ```
 
 Le workflow refuse un tag qui ne correspond pas a la version du manifest, sauf
-suffixe de prerelease (`v0.4.0-rc1`).
+suffixe de prerelease (`v0.5.0-rc1`).
 
 ## Signature des releases
 
@@ -309,8 +347,8 @@ gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt        # ou Get-FileHash sous Windows
 
 # Debian:
-gpg --verify onionrouter-companion_0.4.0_amd64.deb.asc \
-            onionrouter-companion_0.4.0_amd64.deb
+gpg --verify onionrouter-companion_0.5.0_amd64.deb.asc \
+            onionrouter-companion_0.5.0_amd64.deb
 ```
 
 ## Validation locale
@@ -334,8 +372,8 @@ Debian package, sur Linux:
 ```bash
 python3 --version
 bash installer/linux/build-deb.sh
-dpkg-deb --info dist/onionrouter-companion_0.4.0_amd64.deb
-dpkg-deb --contents dist/onionrouter-companion_0.4.0_amd64.deb
+dpkg-deb --info dist/onionrouter-companion_0.5.0_amd64.deb
+dpkg-deb --contents dist/onionrouter-companion_0.5.0_amd64.deb
 ```
 
 ## Limites connues

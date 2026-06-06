@@ -3,7 +3,7 @@
 Extension Firefox + companion Rust pour utiliser Tor depuis Firefox sans
 installer Tor Browser.
 
-Version de travail: `0.4.0`.
+Version de travail: `0.5.0`.
 
 ## 1. Objectif
 
@@ -57,6 +57,7 @@ Installers / packages
 | F16 | Ajouter le site courant | Fait | Via `tabs.query`. |
 | F17 | WebRTC coupe en mode all | Fait | Via `browser.privacy.network`. |
 | F18 | Option WebRTC hors mode all | Fait | Preference utilisateur persistante. |
+| F19 | Autorisation client v3 (services proteges) | Fait | Cles stockees (DPAPI/passphrase), injectees via control port. |
 
 ## 4. Perimetre explicitement exclu
 
@@ -140,7 +141,7 @@ Messages companion vers Firefox:
   "control_port": 9051,
   "tor_version": null,
   "bundle_version": "15.0.15",
-  "companion_version": "0.4.0",
+  "companion_version": "0.5.0",
   "platform": "windows/x86_64",
   "data_dir": "..."
 }
@@ -191,6 +192,26 @@ Verification:
 `SAFECOOKIE` est supporte (challenge HMAC-SHA256), ce qui permet de reutiliser
 un Tor Browser deja ouvert. `HASHEDPASSWORD` n'est pas supporte: le companion
 lance alors son propre Tor.
+
+### 5.6 Autorisation client v3 (F19)
+
+OnionRouter peut acceder a des services `.onion` v3 a acces restreint (client
+authorization): l'operateur detient la cle publique du client, le client
+detient la cle privee.
+
+- Cle x25519, importee (base32 / base64 / ligne `.auth_private` complete) ou
+  generee par le companion (qui fournit la cle publique a transmettre).
+- Stockage **par cle**, au choix:
+  - **OS** (Windows DPAPI), chiffre, charge automatiquement;
+  - **passphrase** (Argon2id + XChaCha20-Poly1305), verrouille jusqu'au besoin.
+- Index plaintext separe; les entrees passphrase n'y stockent que le **SHA-256**
+  de l'adresse (ne revele pas les services au repos).
+- Injection **non-permanente** via `ONION_CLIENT_AUTH_ADD` (control port), pour
+  le Tor du companion comme pour un Tor reutilise (auth SAFECOOKIE/NULL).
+- UI: section dans la page dediee + page de **deverrouillage** interstitielle
+  declenchee a la navigation (interception `webRequest`).
+
+Le companion est obligatoire: l'extension ne parle pas le control port.
 
 ## 6. Distribution
 
