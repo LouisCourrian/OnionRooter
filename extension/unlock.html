@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OnionRouter — Unlock</title>
+  <link rel="stylesheet" href="unlock.css">
+</head>
+<body>
+  <main class="card">
+    <div class="lock" aria-hidden="true">🔒</div>
+    <h1>Authorized service locked</h1>
+    <p class="desc">
+      <strong id="svc-label">This service</strong> requires your passphrase to
+      load its access key into Tor before it can be reached.
+    </p>
+    <p class="addr" id="svc-addr"></p>
+
+    <form id="form">
+      <input type="password" id="passphrase" placeholder="Passphrase" autocomplete="current-password" autofocus>
+      <button type="submit" id="submit">Unlock &amp; continue</button>
+    </form>
+
+    <p class="error" id="error" hidden></p>
+    <button type="button" id="cancel" class="link">Cancel</button>
+  </main>
+  <script src="unlock.js"></script>
+</body>
+</html>

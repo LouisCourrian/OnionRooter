@@ -1,0 +1,48 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff; --bg-elev: #f7f7f8; --fg: #1a1a1a; --muted: #6b6b6b;
+  --border: #e2e2e2; --accent: #7a3fb8; --danger: #c53030;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1f1f23; --bg-elev: #28282e; --fg: #f0f0f0; --muted: #a0a0a0; --border: #34343a; }
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--fg);
+  display: flex; align-items: center; justify-content: center;
+}
+.card {
+  width: 100%; max-width: 380px; margin: 24px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 12px; padding: 28px 24px; text-align: center;
+}
+.lock { font-size: 34px; }
+h1 { font-size: 17px; margin: 8px 0 12px; }
+.desc { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 6px; }
+.desc strong { color: var(--fg); }
+.addr {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px; color: var(--muted); word-break: break-all; margin: 0 0 18px;
+}
+form { display: flex; flex-direction: column; gap: 10px; }
+input {
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--fg); font: inherit;
+}
+input:focus { outline: none; border-color: var(--accent); }
+input.invalid { border-color: var(--danger); animation: shake .25s; }
+@keyframes shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+button {
+  padding: 10px 14px; border: 1px solid var(--accent); border-radius: 7px;
+  background: var(--accent); color: #fff; font: inherit; cursor: pointer;
+}
+button:hover:not(:disabled) { background: #6a35a0; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.error { color: var(--danger); font-size: 12px; margin: 12px 0 0; }
+.link {
+  margin-top: 14px; background: transparent; border: none; color: var(--muted);
+  font-size: 12px; padding: 4px; cursor: pointer;
+}
+.link:hover { color: var(--accent); }

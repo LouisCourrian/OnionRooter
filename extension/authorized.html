@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OnionRouter — Authorized services</title>
+  <link rel="stylesheet" href="authorized.css">
+</head>
+<body>
+  <main class="page">
+    <header>
+      <span class="logo" aria-hidden="true">🧅</span>
+      <h1>Authorized onion services</h1>
+      <span class="pill" id="status-pill">—</span>
+    </header>
+    <p class="intro">
+      Private <code>.onion</code> services only respond to authorized clients.
+      Add the private key the operator gave you (or generate one for them) and
+      OnionRouter loads it into Tor on demand. Keys never leave your machine.
+    </p>
+
+    <!-- Passphrase vault -->
+    <section class="card">
+      <h2>Passphrase vault</h2>
+      <div id="vault-body"></div>
+    </section>
+
+    <!-- Add a service -->
+    <section class="card">
+      <h2>Add a service</h2>
+      <label class="fld" for="paste">Private key or full <code>.auth_private</code> line</label>
+      <textarea id="paste" placeholder="vww6…yyd:descriptor:x25519:PDBR4…  — or just the key (base32 / base64)"></textarea>
+      <p class="hint" id="detect">Accepts base32, base64, or a full <code>addr:descriptor:x25519:key</code> line — auto-detected.</p>
+
+      <div class="grid">
+        <div>
+          <label class="fld" for="addr">Onion address</label>
+          <input id="addr" placeholder="…56 chars….onion" autocomplete="off" spellcheck="false">
+        </div>
+        <div>
+          <label class="fld" for="label">Label (optional)</label>
+          <input id="label" placeholder="Friend's blog" autocomplete="off">
+        </div>
+      </div>
+
+      <fieldset class="tier">
+        <legend>Store with</legend>
+        <label><input type="radio" name="tier" value="os" id="tier-os"> OS encryption <small id="os-hint"></small></label>
+        <label><input type="radio" name="tier" value="passphrase" id="tier-pp"> Passphrase <small id="pp-hint"></small></label>
+      </fieldset>
+
+      <div class="actions">
+        <button class="primary" id="add-btn">Add &amp; load</button>
+        <button id="gen-btn">Generate key pair…</button>
+      </div>
+      <div class="genbox" id="genbox" hidden>
+        🔑 Generated. Give this <b>public</b> key to the operator; the private key
+        is pre-filled above and stays here.
+        <div class="genrow">
+          <code id="genpub"></code>
+          <button id="gencopy" class="mini">Copy</button>
+        </div>
+      </div>
+      <p class="msg" id="add-msg" aria-live="polite"></p>
+    </section>
+
+    <!-- List -->
+    <section class="card">
+      <h2>Your services</h2>
+      <table>
+        <thead><tr><th>Label</th><th>Address</th><th>Tier</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="empty" id="empty" hidden>No authorized services yet.</p>
+    </section>
+  </main>
+  <script src="authorized.js"></script>
+</body>
+</html>

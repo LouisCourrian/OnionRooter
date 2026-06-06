@@ -68,6 +68,12 @@ jobs:
       - name: Check diagnostics.js syntax
         run: node --check extension/diagnostics.js
 
+      - name: Check authorized.js syntax
+        run: node --check extension/authorized.js
+
+      - name: Check unlock.js syntax
+        run: node --check extension/unlock.js
+
   packaging:
     name: Packaging scripts
     runs-on: ubuntu-latest

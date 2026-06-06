@@ -21,7 +21,8 @@
     "tabs",
     "privacy",
     "nativeMessaging",
-    "notifications"
+    "notifications",
+    "webRequestBlocking"
   ],
 
   "host_permissions": ["<all_urls>"],

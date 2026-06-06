@@ -31,6 +31,7 @@ const els = {
   startBtn: document.getElementById("start-btn"),
   stopBtn: document.getElementById("stop-btn"),
   diagnosticsBtn: document.getElementById("diagnostics-btn"),
+  authorizedBtn: document.getElementById("authorized-btn"),
 };
 
 let lastState = null;
@@ -162,5 +163,10 @@ els.stopBtn.addEventListener("click", () =>
 
 els.diagnosticsBtn.addEventListener("click", () => {
   browser.tabs.create({ url: browser.runtime.getURL("diagnostics.html") });
+  window.close();
+});
+
+els.authorizedBtn.addEventListener("click", () => {
+  browser.tabs.create({ url: browser.runtime.getURL("authorized.html") });
   window.close();
 });

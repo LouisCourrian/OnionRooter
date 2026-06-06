@@ -57,6 +57,16 @@ let readyReject = null;
 const diagnosticWaiters = new Set();
 const pingWaiters = new Set();
 
+// id-correlated request/response for client-auth ("auth-*") actions.
+let nextRequestId = 1;
+const pendingRequests = new Map(); // id -> { resolve, reject, timer }
+
+// Cached client-auth index (non-secret metadata). Persisted to storage.local
+// so the webRequest interceptor works at startup without spawning the
+// companion. `unlocked` is in-memory only (never persisted): a fresh companion
+// session always starts locked.
+let authIndex = { entries: [], osAvailable: false, vaultExists: false, unlocked: false };
+
 // ---------- Settings persistence --------------------------------------
 
 async function loadSettings() {
@@ -240,6 +250,15 @@ function onCompanionMessage(msg) {
     case "diagnostic":
       settleWaiters(diagnosticWaiters, msg);
       break;
+    case "reply": {
+      const w = pendingRequests.get(msg.id);
+      if (w) {
+        clearTimeout(w.timer);
+        pendingRequests.delete(msg.id);
+        w.resolve(msg);
+      }
+      break;
+    }
     default:
       console.warn("[OnionRouter] unknown companion message:", msg);
   }
@@ -259,6 +278,13 @@ function onCompanionDisconnect(port) {
   const disconnectError = new Error((error && error.message) || "companion disconnected");
   rejectWaiters(diagnosticWaiters, disconnectError);
   rejectWaiters(pingWaiters, disconnectError);
+  for (const [, w] of pendingRequests) {
+    clearTimeout(w.timer);
+    w.reject(disconnectError);
+  }
+  pendingRequests.clear();
+  // A new companion session starts locked.
+  authIndex.unlocked = false;
   companionPort = null;
 }
 
@@ -512,6 +538,9 @@ browser.runtime.onMessage.addListener((msg) => {
   switch (msg.type) {
     case "get-state":
       return Promise.resolve(getState());
+    case "auth":
+      // { type:"auth", payload:{ action:"auth-...", ... } }
+      return handleAuth(msg.payload || {});
     case "get-diagnostic":
       return requestDiagnostic().then(
         (diagnostic) => ({ ok: true, diagnostic, state: getState() }),
@@ -546,6 +575,137 @@ browser.runtime.onMessage.addListener((msg) => {
   }
 });
 
+// ---------- Client authorization (v3 onion auth) ----------------------
+
+/** Send an id-correlated request to the companion and await its `reply`. */
+function companionRequestId(payload, timeoutMs = 20000) {
+  if (!ensureCompanionPort()) {
+    return Promise.reject(new Error("companion unavailable"));
+  }
+  return new Promise((resolve, reject) => {
+    const id = nextRequestId++;
+    const timer = setTimeout(() => {
+      pendingRequests.delete(id);
+      reject(new Error("companion did not respond in time"));
+    }, timeoutMs);
+    pendingRequests.set(id, { resolve, reject, timer });
+    if (!send({ ...payload, id })) {
+      clearTimeout(timer);
+      pendingRequests.delete(id);
+      reject(new Error("could not send request to companion"));
+    }
+  });
+}
+
+/** Pull the latest index from the companion and cache it (memory + storage). */
+async function refreshAuthIndex() {
+  const r = await companionRequestId({ action: "auth-list" });
+  if (r && r.ok && r.data) {
+    authIndex = {
+      entries: Array.isArray(r.data.entries) ? r.data.entries : [],
+      osAvailable: !!r.data.os_available,
+      vaultExists: !!r.data.vault_exists,
+      unlocked: !!r.data.unlocked,
+    };
+    await browser.storage.local.set({
+      authIndex: {
+        entries: authIndex.entries,
+        osAvailable: authIndex.osAvailable,
+        vaultExists: authIndex.vaultExists,
+      },
+    });
+  }
+  return r;
+}
+
+/** Restore the cached index at startup (no companion spawn). */
+async function loadAuthIndex() {
+  try {
+    const stored = (await browser.storage.local.get("authIndex")).authIndex;
+    if (stored) {
+      authIndex = {
+        entries: Array.isArray(stored.entries) ? stored.entries : [],
+        osAvailable: !!stored.osAvailable,
+        vaultExists: !!stored.vaultExists,
+        unlocked: false,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function sha256Hex(input) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Intercept top-level navigations to a passphrase-protected .onion that is
+ * still locked, and redirect to the unlock page. After unlocking, that page
+ * sends the browser back to the original URL (now reachable).
+ */
+async function onBeforeOnionRequest(details) {
+  let host;
+  try {
+    host = new URL(details.url).hostname.replace(/\.$/, "").toLowerCase();
+  } catch {
+    return {};
+  }
+  if (!host.endsWith(".onion")) return {};
+  if (authIndex.unlocked) return {};
+
+  const protectedEntries = authIndex.entries.filter(
+    (e) => e.tier === "passphrase" && e.onion_hash
+  );
+  if (protectedEntries.length === 0) return {};
+
+  const onion = host.slice(0, -".onion".length);
+  const hash = await sha256Hex(onion);
+  const entry = protectedEntries.find((e) => e.onion_hash === hash);
+  if (!entry) return {};
+
+  const url =
+    browser.runtime.getURL("unlock.html") +
+    "?onion=" + encodeURIComponent(onion) +
+    "&label=" + encodeURIComponent(entry.label || "") +
+    "&return=" + encodeURIComponent(details.url);
+  return { redirectUrl: url };
+}
+
+browser.webRequest.onBeforeRequest.addListener(
+  onBeforeOnionRequest,
+  { urls: ["*://*.onion/*"], types: ["main_frame"] },
+  ["blocking"]
+);
+
+/** Forward an auth command to the companion, refreshing the cache on changes. */
+async function handleAuth(payload) {
+  try {
+    const reply = await companionRequestId(payload);
+    const mutating = [
+      "auth-add",
+      "auth-remove",
+      "auth-unlock",
+      "auth-lock",
+      "auth-set-passphrase",
+    ];
+    if (reply && reply.ok && mutating.includes(payload.action)) {
+      if (payload.action === "auth-unlock" || payload.action === "auth-set-passphrase") {
+        authIndex.unlocked = true;
+      } else if (payload.action === "auth-lock") {
+        authIndex.unlocked = false;
+      }
+      await refreshAuthIndex();
+    }
+    return reply;
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
 // ---------- First-run welcome (F10) -----------------------------------
 
 // Shown once, right after the extension is installed. Explains that Tor is
@@ -573,6 +733,7 @@ browser.runtime.onInstalled.addListener((details) => {
 
 (async () => {
   await loadSettings();
+  await loadAuthIndex();
   await applyWebRTC();
   refreshIcon();
 })();
