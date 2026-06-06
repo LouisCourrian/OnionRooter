@@ -22,6 +22,8 @@ rand = "0.8"
 hex = "0.4"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 data-encoding = "2"
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
 anyhow = "1"
 thiserror = "1"
 dirs = "5"
@@ -33,7 +35,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winbase", "processthreadsapi", "handleapi", "winnt"] }
+winapi = { version = "0.3", features = ["winbase", "processthreadsapi", "handleapi", "winnt", "dpapi", "wincrypt"] }
 tray-item = "0.10"
 webbrowser = "1"
 

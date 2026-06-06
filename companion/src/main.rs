@@ -16,6 +16,7 @@
 //! terminal still shows stderr live.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod auth_store;
 mod client_auth;
 mod messaging;
 mod proxy;
@@ -77,6 +78,9 @@ struct DiagInfo {
 struct State {
     backend: Option<Backend>,
     info: Option<DiagInfo>,
+    /// Derived key of the unlocked passphrase vault (None = locked). Held only
+    /// in memory for the session; never written to disk.
+    pp_key: Option<[u8; 32]>,
 }
 
 impl State {
@@ -198,8 +202,236 @@ async fn handle(state: &Arc<Mutex<State>>, msg: InboundMessage) -> OutboundMessa
         InboundMessage::Status => state.lock().await.snapshot(),
         InboundMessage::Diagnostic => state.lock().await.diagnostic(),
         InboundMessage::Stop => stop(state).await,
-        InboundMessage::Start => start(state).await,
+        InboundMessage::Start => {
+            let reply = start(state).await;
+            if matches!(reply, OutboundMessage::Ready { .. }) {
+                inject_available(state).await;
+            }
+            reply
+        }
+        InboundMessage::AuthList { id } => auth_list(state, id).await,
+        InboundMessage::AuthAdd {
+            id,
+            onion,
+            label,
+            key,
+            tier,
+        } => auth_add(state, id, onion, label, key, tier).await,
+        InboundMessage::AuthRemove { id, onion } => auth_remove(state, id, onion).await,
+        InboundMessage::AuthGenerate { id } => auth_generate(id),
+        InboundMessage::AuthSetPassphrase { id, passphrase } => {
+            auth_set_passphrase(state, id, passphrase).await
+        }
+        InboundMessage::AuthUnlock { id, passphrase } => auth_unlock(state, id, passphrase).await,
+        InboundMessage::AuthLock { id } => auth_lock(state, id).await,
     }
+}
+
+// ---------- Client-authorization handlers -----------------------------
+
+fn reply_ok(id: u64, data: Option<serde_json::Value>) -> OutboundMessage {
+    OutboundMessage::Reply {
+        id,
+        ok: true,
+        error: None,
+        data,
+    }
+}
+
+fn reply_err(id: u64, error: impl std::fmt::Display) -> OutboundMessage {
+    OutboundMessage::Reply {
+        id,
+        ok: false,
+        error: Some(format!("{error:#}")),
+        data: None,
+    }
+}
+
+/// Control port of the active backend, if Tor is running.
+async fn active_control_port(state: &Arc<Mutex<State>>) -> Option<u16> {
+    state.lock().await.info.as_ref().map(|i| i.control_port)
+}
+
+/// Inject every currently-available client key into the running Tor: all OS
+/// entries, plus passphrase entries if the vault is unlocked. Best-effort.
+async fn inject_available(state: &Arc<Mutex<State>>) {
+    let (control_port, pp_key) = {
+        let s = state.lock().await;
+        match s.info.as_ref() {
+            Some(i) => (i.control_port, s.pp_key),
+            None => return,
+        }
+    };
+
+    if let Ok(secrets) = auth_store::os_secrets() {
+        for s in secrets {
+            if let Err(e) = client_auth::add(control_port, &s.onion, &s.privkey_b64).await {
+                warn!("failed to load OS client-auth for {}: {e:#}", s.label);
+            }
+        }
+    }
+    if let Some(key) = pp_key {
+        if let Ok(secrets) = auth_store::pp_secrets(&key) {
+            for s in secrets {
+                if let Err(e) = client_auth::add(control_port, &s.onion, &s.privkey_b64).await {
+                    warn!("failed to load passphrase client-auth for {}: {e:#}", s.label);
+                }
+            }
+        }
+    }
+}
+
+async fn auth_list(state: &Arc<Mutex<State>>, id: u64) -> OutboundMessage {
+    let (unlocked, running, pp_key) = {
+        let s = state.lock().await;
+        (s.pp_key.is_some(), s.backend.is_some(), s.pp_key)
+    };
+
+    let mut entries = auth_store::list().unwrap_or_default();
+    // When unlocked, fill in the real address for passphrase entries so the UI
+    // can show/manage them (it only has hashes otherwise).
+    if let Some(key) = pp_key {
+        if let Ok(secrets) = auth_store::pp_secrets(&key) {
+            use std::collections::HashMap;
+            let by_hash: HashMap<String, String> = secrets
+                .iter()
+                .map(|s| (auth_store::onion_hash(&s.onion), s.onion.clone()))
+                .collect();
+            for e in entries.iter_mut() {
+                if e.tier == "passphrase" {
+                    if let Some(h) = &e.onion_hash {
+                        if let Some(addr) = by_hash.get(h) {
+                            e.onion = Some(addr.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let data = serde_json::json!({
+        "entries": entries,
+        "os_available": auth_store::os_available(),
+        "vault_exists": auth_store::vault_exists(),
+        "unlocked": unlocked,
+        "running": running,
+    });
+    reply_ok(id, Some(data))
+}
+
+async fn auth_add(
+    state: &Arc<Mutex<State>>,
+    id: u64,
+    onion: String,
+    label: String,
+    key: String,
+    tier: String,
+) -> OutboundMessage {
+    let (parsed_onion, privkey) = match client_auth::normalize_private_key(&key) {
+        Ok(v) => v,
+        Err(e) => return reply_err(id, e),
+    };
+    let candidate = if onion.trim().is_empty() {
+        parsed_onion
+    } else {
+        Some(onion)
+    };
+    let onion = match candidate {
+        Some(o) => match client_auth::normalize_onion(&o) {
+            Ok(o) => o,
+            Err(e) => return reply_err(id, e),
+        },
+        None => return reply_err(id, "no .onion address provided"),
+    };
+
+    let store_result = match tier.as_str() {
+        "os" => auth_store::os_add(&onion, &label, &privkey),
+        "passphrase" => {
+            let key = state.lock().await.pp_key;
+            match key {
+                Some(k) => auth_store::pp_add(&k, &onion, &label, &privkey),
+                None => Err(anyhow::anyhow!("unlock the passphrase vault first")),
+            }
+        }
+        other => Err(anyhow::anyhow!("unknown storage tier: {other}")),
+    };
+    if let Err(e) = store_result {
+        return reply_err(id, e);
+    }
+
+    // Load into the running Tor immediately.
+    if let Some(cp) = active_control_port(state).await {
+        if let Err(e) = client_auth::add(cp, &onion, &privkey).await {
+            warn!("stored client-auth but live injection failed: {e:#}");
+        }
+    }
+    reply_ok(id, None)
+}
+
+async fn auth_remove(state: &Arc<Mutex<State>>, id: u64, onion: String) -> OutboundMessage {
+    let onion = match client_auth::normalize_onion(&onion) {
+        Ok(o) => o,
+        Err(e) => return reply_err(id, e),
+    };
+    if let Some(cp) = active_control_port(state).await {
+        let _ = client_auth::remove(cp, &onion).await;
+    }
+    let pp_key = state.lock().await.pp_key;
+    match auth_store::remove(&onion, pp_key.as_ref()) {
+        Ok(()) => reply_ok(id, None),
+        Err(e) => reply_err(id, e),
+    }
+}
+
+fn auth_generate(id: u64) -> OutboundMessage {
+    let (private, public) = client_auth::generate_keypair();
+    reply_ok(id, Some(serde_json::json!({ "private": private, "public": public })))
+}
+
+async fn auth_set_passphrase(
+    state: &Arc<Mutex<State>>,
+    id: u64,
+    passphrase: String,
+) -> OutboundMessage {
+    if auth_store::vault_exists() {
+        return reply_err(id, "a passphrase vault already exists");
+    }
+    match auth_store::init_passphrase(&passphrase) {
+        Ok(key) => {
+            state.lock().await.pp_key = Some(key);
+            reply_ok(id, None)
+        }
+        Err(e) => reply_err(id, e),
+    }
+}
+
+async fn auth_unlock(state: &Arc<Mutex<State>>, id: u64, passphrase: String) -> OutboundMessage {
+    match auth_store::unlock(&passphrase) {
+        Ok((key, _secrets)) => {
+            state.lock().await.pp_key = Some(key);
+            inject_available(state).await;
+            reply_ok(id, None)
+        }
+        Err(e) => reply_err(id, e),
+    }
+}
+
+async fn auth_lock(state: &Arc<Mutex<State>>, id: u64) -> OutboundMessage {
+    // Best-effort: remove passphrase keys from the running Tor so locking
+    // takes effect immediately, then drop the in-memory key.
+    let (cp, pp_key) = {
+        let s = state.lock().await;
+        (s.info.as_ref().map(|i| i.control_port), s.pp_key)
+    };
+    if let (Some(cp), Some(key)) = (cp, pp_key) {
+        if let Ok(secrets) = auth_store::pp_secrets(&key) {
+            for s in secrets {
+                let _ = client_auth::remove(cp, &s.onion).await;
+            }
+        }
+    }
+    state.lock().await.pp_key = None;
+    reply_ok(id, None)
 }
 
 async fn start(state: &Arc<Mutex<State>>) -> OutboundMessage {

@@ -20,6 +20,31 @@ pub enum InboundMessage {
     Ping,
     /// Request a full diagnostic snapshot (Tor source, ports, versions...).
     Diagnostic,
+
+    // ---- Client authorization (v3 onion auth). Each carries a request `id`
+    //      echoed back in the `reply` so the extension can correlate. ----
+    #[serde(rename = "auth-list")]
+    AuthList { id: u64 },
+    #[serde(rename = "auth-add")]
+    AuthAdd {
+        id: u64,
+        #[serde(default)]
+        onion: String,
+        #[serde(default)]
+        label: String,
+        key: String,
+        tier: String, // "os" | "passphrase"
+    },
+    #[serde(rename = "auth-remove")]
+    AuthRemove { id: u64, onion: String },
+    #[serde(rename = "auth-generate")]
+    AuthGenerate { id: u64 },
+    #[serde(rename = "auth-set-passphrase")]
+    AuthSetPassphrase { id: u64, passphrase: String },
+    #[serde(rename = "auth-unlock")]
+    AuthUnlock { id: u64, passphrase: String },
+    #[serde(rename = "auth-lock")]
+    AuthLock { id: u64 },
 }
 
 /// Message sent by the companion to the extension.
@@ -51,6 +76,16 @@ pub enum OutboundMessage {
         platform: String,
         /// Tor data directory path, when resolvable.
         data_dir: Option<String>,
+    },
+    /// Generic id-correlated reply to an `auth-*` request.
+    #[serde(rename = "reply")]
+    Reply {
+        id: u64,
+        ok: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<serde_json::Value>,
     },
 }
 
