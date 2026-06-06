@@ -20,6 +20,8 @@ sha2 = "0.10"
 hmac = "0.12"
 rand = "0.8"
 hex = "0.4"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+data-encoding = "2"
 anyhow = "1"
 thiserror = "1"
 dirs = "5"

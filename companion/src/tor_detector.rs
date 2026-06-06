@@ -146,28 +146,55 @@ pub async fn detect_existing() -> Option<DetectedTor> {
     None
 }
 
-async fn verify_pair(socks_port: u16, control_port: u16) -> Result<Option<DetectedTor>> {
+/// An authenticated control-port connection (read + write halves).
+pub(crate) type ControlConn = (
+    BufReader<tokio::net::tcp::OwnedReadHalf>,
+    tokio::net::tcp::OwnedWriteHalf,
+);
+
+/// Connect to a local control port, discover auth methods, and authenticate
+/// (NULL → SAFECOOKIE → COOKIE). Returns the authenticated connection, ready
+/// for further commands. Shared by detection and client-auth injection.
+pub(crate) async fn connect_and_auth(control_port: u16) -> Result<ControlConn> {
     let stream = TcpStream::connect(("127.0.0.1", control_port))
         .await
         .context("tcp connect")?;
     let (read, mut write) = stream.into_split();
     let mut reader = BufReader::new(read);
 
-    // 1. Discover auth methods.
     write.write_all(b"PROTOCOLINFO 1\r\n").await?;
     let mut auth = AuthInfo::default();
     if !read_response(&mut reader, |line| auth.parse_line(line)).await? {
-        debug!("PROTOCOLINFO refused");
-        return Ok(None);
+        bail!("PROTOCOLINFO refused");
     }
-
-    // 2. Authenticate, preferring the simplest method.
     if !authenticate(&mut reader, &mut write, &auth).await? {
-        debug!("authentication failed (advertised: {auth:?})");
-        return Ok(None);
+        bail!("control port authentication failed");
     }
+    Ok((reader, write))
+}
 
-    // 3. Ask Tor for its version.
+/// Send one control command (CRLF appended) and return whether the final
+/// reply was a 2xx success.
+pub(crate) async fn send_command(
+    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+    write: &mut tokio::net::tcp::OwnedWriteHalf,
+    cmd: &str,
+) -> Result<bool> {
+    write.write_all(cmd.as_bytes()).await?;
+    write.write_all(b"\r\n").await?;
+    await_ok(reader).await
+}
+
+async fn verify_pair(socks_port: u16, control_port: u16) -> Result<Option<DetectedTor>> {
+    let (mut reader, mut write) = match connect_and_auth(control_port).await {
+        Ok(conn) => conn,
+        Err(e) => {
+            debug!("control {control_port}: {e:#}");
+            return Ok(None);
+        }
+    };
+
+    // Ask Tor for its version.
     let Some(version) = ask_version(&mut reader, &mut write).await? else {
         return Ok(None);
     };
