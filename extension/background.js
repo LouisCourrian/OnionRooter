@@ -79,6 +79,9 @@ const pendingRequests = new Map(); // id -> { resolve, reject, timer }
 // companion. `unlocked` is in-memory only (never persisted): a fresh companion
 // session always starts locked.
 let authIndex = { entries: [], osAvailable: false, vaultExists: false, unlocked: false };
+// Resolves once the cached index has been loaded from storage. The webRequest
+// interceptor awaits it so a freshly-woken event page doesn't miss a redirect.
+let authIndexReady = null;
 
 // ---------- Settings persistence --------------------------------------
 
@@ -713,6 +716,13 @@ async function sha256Hex(input) {
  * sends the browser back to the original URL (now reachable).
  */
 async function onBeforeOnionRequest(details) {
+  // The event page may have just woken up for THIS request — make sure the
+  // cached index is loaded before deciding whether to redirect.
+  try {
+    await authIndexReady;
+  } catch {
+    /* ignore */
+  }
   let host;
   try {
     host = new URL(details.url).hostname.replace(/\.$/, "").toLowerCase();
@@ -739,6 +749,10 @@ async function onBeforeOnionRequest(details) {
     "&return=" + encodeURIComponent(details.url);
   return { redirectUrl: url };
 }
+
+// Kick off the cached-index load at top level so it runs on every event-page
+// wake (not only in the boot IIFE), and the interceptor can await it.
+authIndexReady = loadAuthIndex();
 
 browser.webRequest.onBeforeRequest.addListener(
   onBeforeOnionRequest,
@@ -798,7 +812,7 @@ browser.runtime.onInstalled.addListener((details) => {
 
 (async () => {
   await loadSettings();
-  await loadAuthIndex();
+  await authIndexReady;
   await applyWebRTC();
   refreshIcon();
 })();
