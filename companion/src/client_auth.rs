@@ -1,5 +1,5 @@
-//! Tor v3 onion service **client authorization** (cahier: hidden services with
-//! a client key). Lets the companion register a client private key with Tor so
+//! Tor v3 onion service **client authorization** (restricted "hidden services
+//! with a key"). Lets the companion register a client private key with Tor so
 //! a restricted `.onion` becomes reachable.
 //!
 //! This module handles the *crypto + control-port* side:

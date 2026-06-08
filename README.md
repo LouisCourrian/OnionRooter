@@ -56,8 +56,20 @@ Then open any `.onion` address — Tor starts automatically.
 
 The extension never speaks to Tor directly: it asks the companion to provide a
 verified Tor backend, then routes each request through `127.0.0.1:<socks>` with
-DNS forced through Tor. See [docs/TECHNICAL.md](docs/TECHNICAL.md) for details
-and [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md) for the functional scope.
+DNS forced through Tor. See [docs/TECHNICAL.md](docs/TECHNICAL.md) for details.
+
+## Scope
+
+OnionRouter is a convenience tool, **not a replacement for Tor Browser**. It does
+**not**:
+
+- act as a VPN or encrypt your non-Tor traffic;
+- manage multiple circuits or per-tab/identity isolation;
+- host or publish `.onion` services;
+- manage cookies or history;
+- provide Tor Browser's anti-fingerprinting / isolation guarantees.
+
+For maximum anonymity, use [Tor Browser](https://www.torproject.org/download/).
 
 ## Security at a glance
 

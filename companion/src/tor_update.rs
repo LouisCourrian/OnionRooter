@@ -1,4 +1,4 @@
-//! Optional, secure auto-update of the Tor Expert Bundle (cahier F11).
+//! Optional, secure auto-update of the Tor Expert Bundle.
 //!
 //! The Tor Project prunes old versions from `dist.torproject.org`, so a single
 //! hard-pinned version eventually 404s. To stay current without weakening the

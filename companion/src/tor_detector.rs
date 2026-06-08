@@ -1,6 +1,6 @@
 //! Detect and verify an externally-running Tor instance via its Control Port.
 //!
-//! Algorithm (per the cahier des charges §4.3):
+//! Algorithm:
 //!
 //! 1. For each `(socks_port, control_port)` in `KNOWN_PAIRS`:
 //!    a. Open a TCP connection to `127.0.0.1:control_port`.

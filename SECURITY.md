@@ -15,9 +15,9 @@ window to fix before any public disclosure.
 ## Scope
 
 In scope: the Firefox extension, the Rust companion, the release/signing
-pipeline. Out of scope: Tor itself (report upstream), and the explicitly
-excluded items in [`CAHIER_DES_CHARGES.md`](CAHIER_DES_CHARGES.md) §4 (OnionRouter
-does not claim Tor Browser's isolation guarantees).
+pipeline. Out of scope: Tor itself (report upstream), and the explicit non-goals
+listed under [**Scope** in the README](README.md#scope) — OnionRouter does not
+claim Tor Browser's isolation guarantees.
 
 ## Security model (summary)
 
