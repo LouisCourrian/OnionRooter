@@ -11,6 +11,7 @@ const STATUS_LABELS = {
 };
 
 const els = {
+  outdatedBanner: document.getElementById("outdated-banner"),
   statusPill: document.getElementById("status-pill"),
   socksPort: document.getElementById("socks-port"),
   errorRow: document.getElementById("error-row"),
@@ -38,6 +39,9 @@ let lastState = null;
 
 function render(s) {
   lastState = s;
+
+  // Outdated-companion banner
+  els.outdatedBanner.hidden = !s.companionOutdated;
 
   // Status pill
   els.statusPill.dataset.status = s.status;

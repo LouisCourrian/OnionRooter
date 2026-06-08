@@ -59,6 +59,10 @@ pub enum OutboundMessage {
     /// Reply to a `Diagnostic` request. All fields are best-effort; the
     /// `Option`s are `null` when Tor is not running or the value is unknown.
     Diagnostic {
+        /// Native-messaging protocol version the companion speaks. The
+        /// compatibility contract between independently-versioned companion
+        /// and extension.
+        protocol: u32,
         /// Whether a Tor backend is currently active.
         running: bool,
         /// "owned" (we launched it), "tray" (tray daemon), or "external"
@@ -182,6 +186,7 @@ mod tests {
         write_message(
             &mut out,
             &OutboundMessage::Diagnostic {
+                protocol: 1,
                 running: true,
                 source: Some("owned".into()),
                 socks_port: Some(9050),

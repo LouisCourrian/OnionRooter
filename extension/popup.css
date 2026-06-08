@@ -69,6 +69,17 @@ header h1 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
 .status-pill[data-status="ready"]    { background: var(--ok); }
 .status-pill[data-status="error"]    { background: var(--danger); }
 
+/* ---------- Outdated companion banner ---------- */
+.warn-banner {
+  padding: 8px 14px;
+  background: #c98a1422;
+  border-bottom: 1px solid #c98a1455;
+  color: var(--warn);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.warn-banner[hidden] { display: none !important; }
+
 /* ---------- Details ---------- */
 .details {
   padding: 10px 14px;

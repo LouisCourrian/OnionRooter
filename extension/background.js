@@ -17,6 +17,13 @@
 
 const COMPANION_HOST = "com.onionrouter.companion";
 
+// Minimum native-messaging protocol this extension needs from the companion.
+// The companion and the extension are versioned independently (the extension
+// auto-updates via AMO, the companion via its installer), so a newer extension
+// can meet an older companion. If the companion reports a lower protocol, we
+// surface an "update the companion" prompt.
+const REQUIRED_PROTOCOL = 1;
+
 const MODES = Object.freeze({
   onion: "onion",
   all: "all",
@@ -45,6 +52,10 @@ const state = {
   whitelist: [...DEFAULT_SETTINGS.whitelist],
   /** User pref — only consulted outside "all" mode. */
   webrtcDisabled: DEFAULT_SETTINGS.webrtcDisabled,
+  /** Protocol version reported by the companion (null until known). */
+  companionProtocol: null,
+  /** Companion version string (null until known). */
+  companionVersion: null,
 };
 
 let companionPort = null;
@@ -221,6 +232,21 @@ function pingCompanion() {
   return companionRequest(pingWaiters, { action: "ping" });
 }
 
+/** Learn the companion's protocol + version once per session (for skew UX). */
+async function cacheCompanionInfo() {
+  if (state.companionProtocol !== null) return;
+  try {
+    const d = await requestDiagnostic();
+    if (d && typeof d.protocol === "number") {
+      state.companionProtocol = d.protocol;
+      state.companionVersion = d.companion_version || null;
+      broadcastToPopup();
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
 function onCompanionMessage(msg) {
   console.debug("[OnionRouter] ←", msg);
   switch (msg && msg.status) {
@@ -231,6 +257,7 @@ function onCompanionMessage(msg) {
       if (typeof msg.port === "number") {
         setStatus("ready", { socksPort: msg.port, errorMessage: null });
         settleReady(msg.port, null);
+        cacheCompanionInfo();
       }
       break;
     case "stopped":
@@ -283,8 +310,10 @@ function onCompanionDisconnect(port) {
     w.reject(disconnectError);
   }
   pendingRequests.clear();
-  // A new companion session starts locked.
+  // A new companion session starts locked, and protocol info is re-learned.
   authIndex.unlocked = false;
+  state.companionProtocol = null;
+  state.companionVersion = null;
   companionPort = null;
 }
 
@@ -457,6 +486,11 @@ function getState() {
     mode: state.mode,
     whitelist: state.whitelist.slice(),
     webrtcDisabled: state.webrtcDisabled,
+    companionProtocol: state.companionProtocol,
+    companionVersion: state.companionVersion,
+    requiredProtocol: REQUIRED_PROTOCOL,
+    companionOutdated:
+      state.companionProtocol !== null && state.companionProtocol < REQUIRED_PROTOCOL,
   };
 }
 

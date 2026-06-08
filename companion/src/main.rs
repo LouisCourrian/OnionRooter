@@ -40,6 +40,11 @@ use tracing_subscriber::EnvFilter;
 use messaging::{InboundMessage, OutboundMessage};
 use tor_manager::LaunchedTor;
 
+/// Native-messaging protocol version. Bump ONLY on protocol changes (not on
+/// every companion release). The extension compares it against the minimum it
+/// requires; a lower value means "companion too old, please update".
+const PROTOCOL_VERSION: u32 = 1;
+
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(90);
 const NATIVE_MESSAGING_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 
@@ -96,6 +101,7 @@ impl State {
     fn diagnostic(&self) -> OutboundMessage {
         let info = self.info.as_ref();
         OutboundMessage::Diagnostic {
+            protocol: PROTOCOL_VERSION,
             running: self.backend.is_some(),
             source: info.map(effective_source),
             socks_port: info.map(|i| i.socks_port),

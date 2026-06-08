@@ -30,6 +30,7 @@ const els = {
 
   companionConn: document.getElementById("companion-conn"),
   companionVersion: document.getElementById("companion-version"),
+  protocol: document.getElementById("protocol"),
   platform: document.getElementById("platform"),
 
   torRunning: document.getElementById("tor-running"),
@@ -98,6 +99,12 @@ function renderDiagnostic(result) {
 
     setText(els.companionConn, "Connected", "ok");
     setText(els.companionVersion, d.companion_version);
+    const outdated = snapshot.state && snapshot.state.companionOutdated;
+    setText(
+      els.protocol,
+      d.protocol != null ? "v" + d.protocol + (outdated ? " — outdated, update the companion" : "") : null,
+      outdated ? "bad" : null
+    );
     setText(els.platform, d.platform);
 
     setText(els.torRunning, d.running ? "Yes" : "No", d.running ? "ok" : null);
@@ -114,7 +121,7 @@ function renderDiagnostic(result) {
     setText(els.companionConn, `Not responding (${reason})`, "bad");
     // Leave companion/Tor fields blank — we have no data.
     for (const el of [
-      els.companionVersion, els.platform, els.torRunning, els.torSource,
+      els.companionVersion, els.protocol, els.platform, els.torRunning, els.torSource,
       els.torSocks, els.torControl, els.torVersion, els.bundleVersion, els.dataDir,
     ]) {
       setText(el, null);
