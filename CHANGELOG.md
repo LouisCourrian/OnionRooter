@@ -3,6 +3,12 @@
 From 1.0.0 onward the companion and the extension are versioned independently
 (`companion-vX.Y.Z`, `ext-vX.Y.Z`); earlier `v0.x` releases shipped both together.
 
+## Extension 1.0.1
+
+- Fix: the unlock page wasn't shown when navigating to a passphrase-protected
+  `.onion` after the background event page had gone idle (the cached index
+  wasn't loaded yet). The interceptor now waits for the index before deciding.
+
 ## 1.0.0 — first stable
 
 - First public stable release. The extension is published on
