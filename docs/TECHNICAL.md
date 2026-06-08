@@ -285,21 +285,28 @@ AMO ou via une XPI signee.
 
 ## Release
 
-La version est synchronisee manuellement dans:
+Companion et extension sont versionnes **independamment** (l'extension
+s'auto-update via AMO, le companion via son installeur):
 
-- `extension/manifest.json`
-- `companion/Cargo.toml`
-- `companion/Cargo.lock`
+- companion -> `companion/Cargo.toml`
+- extension -> `extension/manifest.json`
 
 Pour publier:
 
 ```bash
-git tag v0.5.1
-git push origin v0.5.1
+# Companion (installeur Windows + paquet Debian)
+git tag companion-v0.5.2
+git push origin companion-v0.5.2
+
+# Extension (soumission a addons.mozilla.org via web-ext sign)
+git tag ext-v0.5.2
+git push origin ext-v0.5.2
 ```
 
-Le workflow refuse un tag qui ne correspond pas a la version du manifest, sauf
-suffixe de prerelease (`v0.5.1-rc1`).
+`release.yml` route selon le prefixe du tag et refuse un tag dont la version ne
+correspond pas a la source concernee (Cargo.toml ou manifest.json). Une version
+de protocole (`PROTOCOL_VERSION`) gere la compatibilite companion/extension en
+cas de decalage.
 
 ## Signature des releases
 

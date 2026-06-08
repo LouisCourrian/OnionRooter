@@ -28,12 +28,19 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
 $RepoRoot  = (Resolve-Path (Join-Path $ScriptDir "..")).Path
 
-# ----- Read version from extension manifest (single source of truth) -----
+# ----- Versions (decoupled): companion = Cargo.toml, extension = manifest -----
 $ManifestPath = Join-Path $RepoRoot "extension\manifest.json"
 $Manifest = Get-Content -Raw -Encoding utf8 $ManifestPath | ConvertFrom-Json
-$Version  = $Manifest.version
-if (-not $Version) { throw "Could not read version from $ManifestPath" }
-Write-Host "Building OnionRouter $Version" -ForegroundColor Cyan
+$ExtVersion = $Manifest.version
+if (-not $ExtVersion) { throw "Could not read version from $ManifestPath" }
+
+$CargoPath = Join-Path $RepoRoot "companion\Cargo.toml"
+$CargoText = Get-Content -Raw -Encoding utf8 $CargoPath
+$CargoMatch = [regex]::Match($CargoText, '(?m)^\s*version\s*=\s*"([^"]+)"')
+if (-not $CargoMatch.Success) { throw "Could not read version from $CargoPath" }
+$CompanionVersion = $CargoMatch.Groups[1].Value
+
+Write-Host "Building OnionRouter -- companion $CompanionVersion, extension $ExtVersion" -ForegroundColor Cyan
 
 # ----- Output dir (next to source by default) -----
 if (-not $OutputDir) {
@@ -62,7 +69,7 @@ if (-not (Test-Path $CompanionExe)) {
 
 # ----- 2. XPI ------------------------------------------------------------
 Write-Host "`n[2/3] Packaging extension as XPI..." -ForegroundColor Yellow
-$XpiPath = Join-Path $OutputDir "onionrouter-$Version.xpi"
+$XpiPath = Join-Path $OutputDir "onionrouter-$ExtVersion.xpi"
 Remove-Item -Force -ErrorAction SilentlyContinue $XpiPath
 
 # Why we don't use Compress-Archive:
@@ -120,13 +127,13 @@ Install NSIS from https://nsis.sourceforge.io/Download and re-run.
 
 $NsiScript = Join-Path $ScriptDir "windows\onionrouter.nsi"
 & $MakeNsis.Source `
-    "/DAPP_VERSION=$Version" `
+    "/DAPP_VERSION=$CompanionVersion" `
     "/DREPO_ROOT=$RepoRoot" `
     "/DOUTPUT_DIR=$OutputDir" `
     $NsiScript
 if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
 
-$InstallerPath = Join-Path $OutputDir "OnionRouter-Setup-$Version.exe"
+$InstallerPath = Join-Path $OutputDir "OnionRouter-Setup-$CompanionVersion.exe"
 Write-Host "`nDone." -ForegroundColor Green
 Write-Host "  XPI:       $XpiPath"
 Write-Host "  Installer: $InstallerPath"

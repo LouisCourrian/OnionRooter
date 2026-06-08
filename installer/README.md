@@ -23,34 +23,33 @@ installer/
 
 ## Automated release
 
-Recommended flow:
+The companion and the extension are versioned and released **independently**
+(the extension auto-updates via AMO, the companion via this installer):
 
 ```cmd
-cd <repo>
-git tag v0.5.1
-git push origin v0.5.1
+# Companion release -> Windows installer + Debian package (version = Cargo.toml)
+git tag companion-v0.5.2
+git push origin companion-v0.5.2
+
+# Extension release -> submit to addons.mozilla.org (version = manifest.json)
+git tag ext-v0.5.2
+git push origin ext-v0.5.2
 ```
 
-This triggers `.github/workflows/release.yml`.
+Both trigger `.github/workflows/release.yml`, which routes by tag prefix.
 
-The Windows job:
+The **companion** tag runs:
 
-1. Checks out the tagged commit.
-2. Installs Rust and NSIS.
-3. Runs the companion test suite.
-4. Builds the companion in release mode.
-5. Packages the extension as `onionrouter-<ver>.xpi`.
-6. Builds `OnionRouter-Setup-<ver>.exe`.
-7. Computes SHA-256 sums for the Windows artefacts.
-8. Publishes the XPI, installer, and `SHA256SUMS.txt`.
+1. Windows job: tests, builds `OnionRouter-Setup-<ver>.exe`, GPG-signs the
+   checksums, publishes them. Version checked against `companion/Cargo.toml`.
+2. Linux job: builds `onionrouter-companion_<ver>_amd64.deb`, GPG-signs it,
+   publishes it.
 
-The Linux job:
-
-1. Checks out the tagged commit.
-2. Installs Rust.
-3. Builds `onionrouter-companion_<ver>_amd64.deb`.
-4. Computes a `.sha256` checksum for the Debian package.
-5. Uploads both files to the same GitHub Release.
+The **extension** tag runs the extension job: it submits `extension/` to
+addons.mozilla.org via `web-ext sign --channel=listed` (using the
+`AMO_JWT_ISSUER` / `AMO_JWT_SECRET` secrets) and publishes a release marker.
+Version checked against `extension/manifest.json`. The installer no longer
+bundles the XPI — the extension is distributed by AMO.
 
 No local build is required for release publication.
 

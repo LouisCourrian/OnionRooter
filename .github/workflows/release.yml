@@ -1,22 +1,52 @@
 name: Release
 
-# Push a v* tag (e.g. v0.2.2, v0.2.2-rc1) to trigger builds that
-# publish a GitHub Release with the XPI, Windows installer, and Debian package.
+# Companion and extension are versioned and released independently:
+#   - push  companion-vX.Y.Z  -> build the Windows installer + Debian package
+#   - push  ext-vX.Y.Z        -> submit the extension to addons.mozilla.org
 on:
   push:
     tags:
-      - 'v*'
+      - 'companion-v*'
+      - 'ext-v*'
 
 permissions:
-  contents: write  # required to create a release
+  contents: write # required to create a release
 
 jobs:
-  build:
-    name: Build & publish (Windows)
+  # ---- Parse the tag: which component, which version, prerelease? ----
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      component: ${{ steps.p.outputs.component }}
+      version: ${{ steps.p.outputs.version }}
+      prerelease: ${{ steps.p.outputs.prerelease }}
+    steps:
+      - id: p
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [[ "$tag" == companion-v* ]]; then
+            comp=companion; ver="${tag#companion-v}"
+          elif [[ "$tag" == ext-v* ]]; then
+            comp=extension; ver="${tag#ext-v}"
+          else
+            echo "unknown tag pattern: $tag" >&2; exit 1
+          fi
+          echo "component=$comp" >> "$GITHUB_OUTPUT"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          # 0.x or any -suffix is a prerelease.
+          if [[ "$ver" == *-* || "$ver" == 0.* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Tag $tag -> component=$comp version=$ver"
+
+  # ---- Companion: Windows installer ----
+  windows:
+    needs: meta
+    if: needs.meta.outputs.component == 'companion'
     runs-on: windows-latest
     env:
-      # Optional GPG signing key (ASCII-armored private key) + its passphrase.
-      # When absent, the signing step is skipped and the build still succeeds.
       GPG_PRIVATE_KEY: ${{ secrets.GPG_SIGNING_KEY }}
       GPG_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
 
@@ -42,52 +72,46 @@ jobs:
         run: cargo test --manifest-path companion/Cargo.toml --release
         shell: pwsh
 
+      - name: Sanity check tag matches companion (Cargo.toml) version
+        run: |
+          $ver = (Select-String -Path companion\Cargo.toml -Pattern '^\s*version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          $tag = "${{ needs.meta.outputs.version }}"
+          if ($tag -ne $ver -and -not $tag.StartsWith("$ver-")) {
+            Write-Error "Tag version '$tag' does not match companion Cargo.toml version '$ver'."
+            exit 1
+          }
+        shell: pwsh
+
       - name: Install NSIS
-        # windows-latest ships with Chocolatey pre-installed.
         run: choco install nsis -y --no-progress
         shell: pwsh
 
-      - name: Build XPI + installer
+      - name: Build installer
         run: powershell -NoProfile -ExecutionPolicy Bypass -File installer\build.ps1
         shell: pwsh
 
-      - name: Read version from manifest
-        id: meta
+      - name: Locate artifacts
+        id: meta2
         run: |
-          $manifest = Get-Content extension\manifest.json -Raw | ConvertFrom-Json
-          $version  = $manifest.version
-          "version=$version"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "xpi=dist/onionrouter-$version.xpi" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "exe=dist/OnionRouter-Setup-$version.exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "Version $version"
+          $ver = (Select-String -Path companion\Cargo.toml -Pattern '^\s*version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          "exe=dist/OnionRouter-Setup-$ver.exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         shell: pwsh
 
       - name: Generate SHA-256 checksums
         run: |
-          $xpi = "${{ steps.meta.outputs.xpi }}"
-          $exe = "${{ steps.meta.outputs.exe }}"
-          $sums = @()
-          foreach ($f in @($xpi, $exe)) {
-            $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
-            $name = Split-Path $f -Leaf
-            $sums += "$h  $name"
-          }
-          $sums -join "`n" | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
+          $exe = "${{ steps.meta2.outputs.exe }}"
+          $h = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$h  $(Split-Path $exe -Leaf)" | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
           Get-Content dist/SHA256SUMS.txt
         shell: pwsh
 
       - name: Sign checksums with GPG
-        # Skipped automatically when GPG_SIGNING_KEY is not configured.
         if: env.GPG_PRIVATE_KEY != ''
         run: |
           $ErrorActionPreference = "Stop"
           gpg --version | Select-Object -First 1
-          # Use the default keyring; the Git-bundled gpg mishandles a Windows
-          # GNUPGHOME path. Import the private key via stdin.
           $env:GPG_PRIVATE_KEY | gpg --batch --import
           gpg --list-secret-keys --keyid-format=long
-          # Pass the passphrase via a file: dodges shell quoting of special
-          # characters and a trailing newline in the secret.
           $pf = Join-Path $env:RUNNER_TEMP "pp.txt"
           [System.IO.File]::WriteAllText($pf, $env:GPG_PASSPHRASE)
           try {
@@ -99,47 +123,24 @@ jobs:
           gpg --verify dist/SHA256SUMS.txt.asc dist/SHA256SUMS.txt
         shell: pwsh
 
-      - name: Sanity check tag matches manifest version
-        run: |
-          $tag = "${{ github.ref_name }}".TrimStart('v')
-          $ver = "${{ steps.meta.outputs.version }}"
-          if ($tag -ne $ver -and -not $tag.StartsWith("$ver-")) {
-            Write-Error "Tag '${{ github.ref_name }}' does not match manifest version '$ver'."
-            exit 1
-          }
-        shell: pwsh
-
-      - name: Detect prerelease
-        id: prerelease
-        run: |
-          $tag = "${{ github.ref_name }}"
-          # Anything with a dash (-alpha, -rc1, -beta) OR a v0.* tag is a prerelease.
-          if ($tag -match '-' -or $tag -match '^v0\.') {
-            "is_prerelease=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          } else {
-            "is_prerelease=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
-        shell: pwsh
-
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          prerelease: ${{ needs.meta.outputs.prerelease }}
           generate_release_notes: true
           files: |
-            ${{ steps.meta.outputs.xpi }}
-            ${{ steps.meta.outputs.exe }}
+            ${{ steps.meta2.outputs.exe }}
             dist/SHA256SUMS.txt
             dist/SHA256SUMS.txt.asc
 
+  # ---- Companion: Debian package ----
   linux-deb:
-    name: Build Debian package
-    needs: build
+    needs: meta
+    if: needs.meta.outputs.component == 'companion'
     runs-on: ubuntu-22.04
     env:
-      # Same optional GPG key as the Windows job; skipped when unset.
       GPG_PRIVATE_KEY: ${{ secrets.GPG_SIGNING_KEY }}
       GPG_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
 
@@ -165,22 +166,29 @@ jobs:
         run: bash installer/linux/build-deb.sh
 
       - name: Read package metadata
-        id: meta
+        id: meta2
         run: |
-          version="$(python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])')"
+          version="$(grep -m1 -oP '^\s*version\s*=\s*"\K[^"]+' companion/Cargo.toml)"
           deb="dist/onionrouter-companion_${version}_amd64.deb"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "deb=$deb" >> "$GITHUB_OUTPUT"
-          echo "Version $version"
+
+      - name: Sanity check tag matches companion version
+        run: |
+          ver="${{ steps.meta2.outputs.version }}"
+          tag="${{ needs.meta.outputs.version }}"
+          if [[ "$tag" != "$ver" && "$tag" != "$ver"-* ]]; then
+            echo "Tag version '$tag' does not match Cargo.toml version '$ver'." >&2
+            exit 1
+          fi
 
       - name: Generate Debian SHA-256 checksum
         run: |
           cd dist
-          sha256sum "$(basename "${{ steps.meta.outputs.deb }}")" > "$(basename "${{ steps.meta.outputs.deb }}").sha256"
-          cat "$(basename "${{ steps.meta.outputs.deb }}").sha256"
+          sha256sum "$(basename "${{ steps.meta2.outputs.deb }}")" > "$(basename "${{ steps.meta2.outputs.deb }}").sha256"
+          cat "$(basename "${{ steps.meta2.outputs.deb }}").sha256"
 
       - name: Sign Debian package with GPG
-        # Skipped automatically when GPG_SIGNING_KEY is not configured.
         if: env.GPG_PRIVATE_KEY != ''
         run: |
           set -euo pipefail
@@ -189,42 +197,72 @@ jobs:
           echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
           gpgconf --kill gpg-agent || true
           printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
-          gpg --list-secret-keys --keyid-format=long
-          # Passphrase via a file: dodges shell quoting and a trailing newline.
           pf="$(mktemp)"
           printf '%s' "$GPG_PASSPHRASE" > "$pf"
-          deb="${{ steps.meta.outputs.deb }}"
+          deb="${{ steps.meta2.outputs.deb }}"
           gpg --batch --yes --pinentry-mode loopback --passphrase-file "$pf" \
             --armor --detach-sign --output "$deb.asc" "$deb"
           rm -f "$pf"
           gpg --verify "$deb.asc" "$deb"
-
-      - name: Sanity check tag matches manifest version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          ver="${{ steps.meta.outputs.version }}"
-          if [[ "$tag" != "$ver" && "$tag" != "$ver"-* ]]; then
-            echo "Tag '$GITHUB_REF_NAME' does not match manifest version '$ver'." >&2
-            exit 1
-          fi
-
-      - name: Detect prerelease
-        id: prerelease
-        run: |
-          tag="$GITHUB_REF_NAME"
-          if [[ "$tag" == *-* || "$tag" == v0.* ]]; then
-            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Publish GitHub Release assets
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          prerelease: ${{ needs.meta.outputs.prerelease }}
           files: |
-            ${{ steps.meta.outputs.deb }}
-            ${{ steps.meta.outputs.deb }}.sha256
-            ${{ steps.meta.outputs.deb }}.asc
+            ${{ steps.meta2.outputs.deb }}
+            ${{ steps.meta2.outputs.deb }}.sha256
+            ${{ steps.meta2.outputs.deb }}.asc
+
+  # ---- Extension: submit to addons.mozilla.org ----
+  extension:
+    needs: meta
+    if: needs.meta.outputs.component == 'extension'
+    runs-on: ubuntu-latest
+    env:
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sanity check tag matches manifest version
+        run: |
+          ver="$(python3 -c 'import json;print(json.load(open("extension/manifest.json"))["version"])')"
+          tag="${{ needs.meta.outputs.version }}"
+          if [[ "$tag" != "$ver" ]]; then
+            echo "Tag version '$tag' does not match manifest version '$ver'." >&2
+            exit 1
+          fi
+
+      - name: Submit to addons.mozilla.org (listed)
+        if: env.AMO_JWT_ISSUER != ''
+        run: |
+          npx --yes web-ext@latest sign \
+            --source-dir=extension \
+            --channel=listed \
+            --api-key="$AMO_JWT_ISSUER" \
+            --api-secret="$AMO_JWT_SECRET"
+
+      - name: AMO secrets missing
+        if: env.AMO_JWT_ISSUER == ''
+        run: echo "::warning::AMO_JWT_ISSUER/SECRET not set -- skipped AMO submission."
+
+      - name: Publish GitHub Release (marker)
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ needs.meta.outputs.prerelease }}
+          generate_release_notes: true
+          body: |
+            Extension v${{ needs.meta.outputs.version }} — published on
+            [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/onionrouter/).
