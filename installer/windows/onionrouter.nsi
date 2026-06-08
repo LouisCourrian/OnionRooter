@@ -59,9 +59,9 @@ ShowUnInstDetails show
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_TEXT "Companion installed. The system-tray app is now running -- look for the purple onion icon in the notification area (bottom-right of your screen).$\r$\n$\r$\nNext step: install the Firefox extension. Open Firefox and drag$\r$\n  $INSTDIR\extension.xpi$\r$\ninto a browser window."
-!define MUI_FINISHPAGE_LINK "Open install folder"
-!define MUI_FINISHPAGE_LINK_LOCATION "$INSTDIR"
+!define MUI_FINISHPAGE_TEXT "Companion installed and running in the system tray (purple onion, bottom-right).$\r$\n$\r$\nLast step: install the OnionRouter extension from Firefox Add-ons using the button below, then visit any .onion site."
+!define MUI_FINISHPAGE_LINK "Get the Firefox extension (addons.mozilla.org)"
+!define MUI_FINISHPAGE_LINK_LOCATION "https://addons.mozilla.org/firefox/addon/onionrouter/"
 ; MUI wraps this path in its own quotes when composing Exec internally,
 ; so we MUST pass the bare path -- adding our own quotes here produces
 ; an unparseable Exec call ("Exec expects 1 parameters, got 3").
@@ -89,9 +89,8 @@ Section "Install"
     SetOutPath "$INSTDIR\bin"
     File "${REPO_ROOT}\companion\target\release\onionrouter-companion.exe"
 
-    ; Bundled XPI (for the user to drag into Firefox)
-    SetOutPath "$INSTDIR"
-    File /oname=extension.xpi "${OUTPUT_DIR}\onionrouter-${APP_VERSION}.xpi"
+    ; The Firefox extension is distributed via addons.mozilla.org (signed),
+    ; so it is no longer bundled here -- the finish page links to it.
 
     ; Write Native Messaging host manifest.
     ; JSON requires forward slashes OR escaped backslashes — we go with
@@ -158,7 +157,6 @@ Section "Uninstall"
     Delete "$INSTDIR\bin\onionrouter-companion.exe"
     RMDir  "$INSTDIR\bin"
     Delete "$INSTDIR\${NATIVE_HOST}.json"
-    Delete "$INSTDIR\extension.xpi"
 
     ; Tor download cache + tray runtime state file.
     RMDir /r "$INSTDIR\tor"
