@@ -404,18 +404,18 @@ browser.proxy.onRequest.addListener(handleProxyRequest, { urls: ["<all_urls>"] }
 // ---------- Toolbar icon ----------------------------------------------
 
 const READY_ICON_BY_MODE = {
-  [MODES.onion]: "icons/icon-active-onion.svg",
-  [MODES.all]: "icons/icon-active-all.svg",
-  [MODES.whitelist]: "icons/icon-active-whitelist.svg",
+  [MODES.onion]: "icons/icon-active-onion.png",
+  [MODES.all]: "icons/icon-active-all.png",
+  [MODES.whitelist]: "icons/icon-active-whitelist.png",
 };
 
 function iconPath() {
   if (state.status === "ready") {
     return READY_ICON_BY_MODE[state.mode] || READY_ICON_BY_MODE[MODES.onion];
   }
-  if (state.status === "starting") return "icons/icon-starting.svg";
-  if (state.status === "error") return "icons/icon-error.svg";
-  return "icons/icon-inactive.svg";
+  if (state.status === "starting") return "icons/icon-starting.png";
+  if (state.status === "error") return "icons/icon-error.png";
+  return "icons/icon-inactive.png";
 }
 
 function statusLabel() {
@@ -716,7 +716,7 @@ browser.runtime.onInstalled.addListener((details) => {
   try {
     browser.notifications.create("onionrouter-welcome", {
       type: "basic",
-      iconUrl: browser.runtime.getURL("icons/icon-active-onion.svg"),
+      iconUrl: browser.runtime.getURL("icons/icon-active-onion.png"),
       title: "OnionRouter is ready",
       message:
         "Open any .onion address and Tor starts automatically — it's " +

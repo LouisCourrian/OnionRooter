@@ -53,3 +53,9 @@ installer/com.onionrouter.companion.json
 .claude/settings.local.json
 .claude/cache/
 .claude/projects/*/sessions/
+
+# Affinity/source art (keep PNG/ICO outputs only)
+*.af
+
+# Affinity source art (local only, not shipped)
+art-sources/

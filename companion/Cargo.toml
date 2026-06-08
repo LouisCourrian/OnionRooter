@@ -42,6 +42,7 @@ webbrowser = "1"
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
 ico = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [profile.release]
 opt-level = "z"

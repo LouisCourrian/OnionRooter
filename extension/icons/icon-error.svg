@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <title>OnionRouter — error</title>
-  <circle cx="64" cy="64" r="56" fill="none" stroke="#c53030" stroke-width="6"/>
-  <path d="M64 28c-14 0-22 12-22 28s8 32 22 32 22-16 22-32-8-28-22-28z"
-        fill="none" stroke="#c53030" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M44 44l40 40M84 44l-40 40"
-        stroke="#c53030" stroke-width="6" stroke-linecap="round"/>
-</svg>

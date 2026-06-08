@@ -34,11 +34,11 @@
   "action": {
     "default_title": "OnionRouter",
     "default_popup": "popup.html",
-    "default_icon": "icons/icon-inactive.svg"
+    "default_icon": "icons/icon-inactive.png"
   },
 
   "icons": {
-    "48": "icons/icon-inactive.svg",
-    "128": "icons/icon-inactive.svg"
+    "48": "icons/icon-app.png",
+    "128": "icons/icon-app.png"
   }
 }
