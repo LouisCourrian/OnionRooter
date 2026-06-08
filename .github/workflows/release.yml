@@ -238,10 +238,18 @@ jobs:
         run: |
           ver="$(python3 -c 'import json;print(json.load(open("extension/manifest.json"))["version"])')"
           tag="${{ needs.meta.outputs.version }}"
-          if [[ "$tag" != "$ver" ]]; then
+          if [[ "$tag" != "$ver" && "$tag" != "$ver"-* ]]; then
             echo "Tag version '$tag' does not match manifest version '$ver'." >&2
             exit 1
           fi
+
+      - name: Build XPI
+        run: |
+          npx --yes web-ext@latest build \
+            --source-dir=extension \
+            --artifacts-dir=dist \
+            --filename="onionrouter-${{ needs.meta.outputs.version }}.xpi" \
+            --overwrite-dest
 
       - name: Submit to addons.mozilla.org (listed)
         if: env.AMO_JWT_ISSUER != ''
@@ -256,13 +264,16 @@ jobs:
         if: env.AMO_JWT_ISSUER == ''
         run: echo "::warning::AMO_JWT_ISSUER/SECRET not set -- skipped AMO submission."
 
-      - name: Publish GitHub Release (marker)
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           prerelease: ${{ needs.meta.outputs.prerelease }}
           generate_release_notes: true
+          files: |
+            dist/onionrouter-${{ needs.meta.outputs.version }}.xpi
           body: |
-            Extension v${{ needs.meta.outputs.version }} — published on
+            Extension v${{ needs.meta.outputs.version }} — install from
             [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/onionrouter/).
+            The attached XPI is for reference; AMO serves the signed build.

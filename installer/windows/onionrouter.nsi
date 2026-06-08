@@ -2,11 +2,11 @@
 ;
 ; Per-user install (HKCU, no admin required) into %LOCALAPPDATA%\OnionRouter.
 ; Drops the companion binary, generates the Native Messaging host manifest
-; pointing at it, writes the HKCU registry key Firefox reads to discover
-; the host, and bundles the (eventually signed) XPI alongside.
+; pointing at it, and writes the HKCU registry key Firefox reads to discover
+; the host. The extension itself is installed from addons.mozilla.org.
 ;
 ; Build:
-;   makensis /DAPP_VERSION=0.5.1 /DREPO_ROOT=Z:\path\to\repo onionrouter.nsi
+;   makensis /DAPP_VERSION=1.0.0 /DREPO_ROOT=Z:\path\to\repo onionrouter.nsi
 ;
 ; (Driven by installer\build.ps1 — don't invoke makensis by hand normally.)
 
