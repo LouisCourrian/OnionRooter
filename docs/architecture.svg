@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 520" font-family="system-ui, -apple-system, Segoe UI, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7a3fb8"/>
+    </marker>
+    <style>
+      .box   { fill: #f5f3fb; stroke: #7a3fb8; stroke-width: 2; }
+      .title { fill: #1a1a1a; font-size: 17px; font-weight: 600; }
+      .sub   { fill: #5b5b66; font-size: 12.5px; }
+      .conn  { stroke: #7a3fb8; stroke-width: 2.5; }
+      .label { fill: #7a3fb8; font-size: 12px; font-weight: 600; }
+    </style>
+  </defs>
+
+  <!-- Box 1: Firefox + extension -->
+  <rect class="box" x="90" y="20" width="420" height="84" rx="12"/>
+  <text class="title" x="300" y="52" text-anchor="middle">Firefox + OnionRouter extension</text>
+  <text class="sub"   x="300" y="76" text-anchor="middle">routing · modes (onion / all / whitelist) · WebRTC · client-auth UI</text>
+
+  <line class="conn" x1="300" y1="104" x2="300" y2="146" marker-end="url(#arrow)"/>
+  <text class="label" x="312" y="129">Native Messaging (stdio)</text>
+
+  <!-- Box 2: companion -->
+  <rect class="box" x="90" y="148" width="420" height="92" rx="12"/>
+  <text class="title" x="300" y="180" text-anchor="middle">OnionRouter companion (Rust)</text>
+  <text class="sub"   x="300" y="204" text-anchor="middle">downloads · verifies (SHA-256 + PGP) · auto-updates</text>
+  <text class="sub"   x="300" y="222" text-anchor="middle">launches Tor, or reuses a running one</text>
+
+  <line class="conn" x1="300" y1="240" x2="300" y2="282" marker-end="url(#arrow)"/>
+  <text class="label" x="312" y="265">manages</text>
+
+  <!-- Box 3: Tor -->
+  <rect class="box" x="90" y="284" width="420" height="80" rx="12"/>
+  <text class="title" x="300" y="316" text-anchor="middle">Tor</text>
+  <text class="sub"   x="300" y="340" text-anchor="middle">SOCKS5 proxy + control port — DNS forced through Tor</text>
+
+  <line class="conn" x1="300" y1="364" x2="300" y2="406" marker-end="url(#arrow)"/>
+  <text class="label" x="312" y="389">encrypted circuit</text>
+
+  <!-- Box 4: destination -->
+  <rect class="box" x="90" y="408" width="420" height="72" rx="12"/>
+  <text class="title" x="300" y="438" text-anchor="middle">.onion service &#183; or the web</text>
+  <text class="sub"   x="300" y="460" text-anchor="middle">.onion always goes through Tor — never direct</text>
+</svg>

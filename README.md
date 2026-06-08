@@ -50,11 +50,9 @@ Then open any `.onion` address — Tor starts automatically.
 
 ## How it works
 
-```text
-Firefox extension  ──Native Messaging──►  Rust companion  ──►  Tor
- routing, modes,                          downloads/verifies/      SOCKS5
- whitelist, UI                            launches/reuses Tor      + Control
-```
+<div align="center">
+  <img src="docs/architecture.svg" width="460" alt="OnionRouter architecture: Firefox extension → companion → Tor → .onion">
+</div>
 
 The extension never speaks to Tor directly: it asks the companion to provide a
 verified Tor backend, then routes each request through `127.0.0.1:<socks>` with
