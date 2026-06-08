@@ -56,6 +56,8 @@ const state = {
   companionProtocol: null,
   /** Companion version string (null until known). */
   companionVersion: null,
+  /** Latest companion-update info from the companion (checked via Tor). */
+  companionUpdate: null,
 };
 
 let companionPort = null;
@@ -247,6 +249,31 @@ async function cacheCompanionInfo() {
   }
 }
 
+/**
+ * Ask the companion to check for a newer companion release. The companion
+ * performs the GitHub request **through Tor**, so the user's real IP is never
+ * exposed. Requires Tor to be running.
+ */
+async function checkForUpdate(force = false) {
+  if (state.status !== "ready") return; // needs Tor up to route via Tor
+  if (!force && state.companionUpdate) return; // already checked this session
+  try {
+    const r = await companionRequestId({ action: "update-check" }, 40000);
+    if (r && r.ok && r.data) {
+      state.companionUpdate = r.data;
+      broadcastToPopup();
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
+// Daily background check (only runs when Tor is up).
+browser.alarms.create("companion-update-check", { periodInMinutes: 1440 });
+browser.alarms.onAlarm.addListener((a) => {
+  if (a.name === "companion-update-check") checkForUpdate(true);
+});
+
 function onCompanionMessage(msg) {
   console.debug("[OnionRouter] ←", msg);
   switch (msg && msg.status) {
@@ -258,6 +285,7 @@ function onCompanionMessage(msg) {
         setStatus("ready", { socksPort: msg.port, errorMessage: null });
         settleReady(msg.port, null);
         cacheCompanionInfo();
+        checkForUpdate();
       }
       break;
     case "stopped":
@@ -491,6 +519,9 @@ function getState() {
     requiredProtocol: REQUIRED_PROTOCOL,
     companionOutdated:
       state.companionProtocol !== null && state.companionProtocol < REQUIRED_PROTOCOL,
+    companionUpdateAvailable: !!(state.companionUpdate && state.companionUpdate.update_available),
+    latestCompanionVersion: state.companionUpdate ? state.companionUpdate.latest : null,
+    companionUpdateUrl: state.companionUpdate ? state.companionUpdate.url : null,
   };
 }
 

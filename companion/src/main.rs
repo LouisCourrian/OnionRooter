@@ -24,6 +24,7 @@ mod runtime;
 mod tor_detector;
 mod tor_manager;
 mod tor_update;
+mod update_check;
 
 #[cfg(windows)]
 mod tray;
@@ -230,6 +231,23 @@ async fn handle(state: &Arc<Mutex<State>>, msg: InboundMessage) -> OutboundMessa
         }
         InboundMessage::AuthUnlock { id, passphrase } => auth_unlock(state, id, passphrase).await,
         InboundMessage::AuthLock { id } => auth_lock(state, id).await,
+        InboundMessage::UpdateCheck { id } => update_check_cmd(state, id).await,
+    }
+}
+
+/// Check for a newer companion release (via Tor). Requires Tor running so the
+/// request can be routed through the SOCKS port.
+async fn update_check_cmd(state: &Arc<Mutex<State>>, id: u64) -> OutboundMessage {
+    let socks = state.lock().await.info.as_ref().map(|i| i.socks_port);
+    match socks {
+        Some(port) => match update_check::check(port).await {
+            Ok(info) => reply_ok(id, Some(serde_json::to_value(info).unwrap_or_default())),
+            Err(e) => reply_err(id, e),
+        },
+        None => reply_ok(
+            id,
+            Some(serde_json::json!({ "update_available": false, "reason": "Tor not running" })),
+        ),
     }
 }
 

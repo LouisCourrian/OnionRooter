@@ -80,6 +80,25 @@ header h1 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
 }
 .warn-banner[hidden] { display: none !important; }
 
+.update-banner {
+  padding: 8px 14px;
+  background: #1e8a4a22;
+  border-bottom: 1px solid #1e8a4a55;
+  color: var(--ok);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.update-banner[hidden] { display: none !important; }
+.inline-link {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
 /* ---------- Details ---------- */
 .details {
   padding: 10px 14px;

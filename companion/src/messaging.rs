@@ -45,6 +45,9 @@ pub enum InboundMessage {
     AuthUnlock { id: u64, passphrase: String },
     #[serde(rename = "auth-lock")]
     AuthLock { id: u64 },
+    /// Check for a newer companion release (performed via Tor).
+    #[serde(rename = "update-check")]
+    UpdateCheck { id: u64 },
 }
 
 /// Message sent by the companion to the extension.

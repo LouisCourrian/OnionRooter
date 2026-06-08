@@ -58,6 +58,7 @@ Installers / packages
 | F17 | WebRTC coupe en mode all | Fait | Via `browser.privacy.network`. |
 | F18 | Option WebRTC hors mode all | Fait | Preference utilisateur persistante. |
 | F19 | Autorisation client v3 (services proteges) | Fait | Cles stockees (DPAPI/passphrase), injectees via control port. |
+| F20 | Verification mise a jour du companion | Fait | Companion interroge GitHub **via Tor**; bandeau popup si nouvelle version. |
 
 ## 4. Perimetre explicitement exclu
 

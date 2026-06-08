@@ -12,6 +12,9 @@ const STATUS_LABELS = {
 
 const els = {
   outdatedBanner: document.getElementById("outdated-banner"),
+  updateBanner: document.getElementById("update-banner"),
+  updateVersion: document.getElementById("update-version"),
+  updateLink: document.getElementById("update-link"),
   statusPill: document.getElementById("status-pill"),
   socksPort: document.getElementById("socks-port"),
   errorRow: document.getElementById("error-row"),
@@ -42,6 +45,14 @@ function render(s) {
 
   // Outdated-companion banner
   els.outdatedBanner.hidden = !s.companionOutdated;
+
+  // Companion update-available banner
+  els.updateBanner.hidden = !s.companionUpdateAvailable;
+  if (s.companionUpdateAvailable) {
+    els.updateVersion.textContent = s.latestCompanionVersion || "";
+    els.updateLink.dataset.url =
+      s.companionUpdateUrl || "https://github.com/LouisCourrian/OnionRooter/releases";
+  }
 
   // Status pill
   els.statusPill.dataset.status = s.status;
@@ -172,5 +183,11 @@ els.diagnosticsBtn.addEventListener("click", () => {
 
 els.authorizedBtn.addEventListener("click", () => {
   browser.tabs.create({ url: browser.runtime.getURL("authorized.html") });
+  window.close();
+});
+
+els.updateLink.addEventListener("click", () => {
+  const url = els.updateLink.dataset.url || "https://github.com/LouisCourrian/OnionRooter/releases";
+  browser.tabs.create({ url });
   window.close();
 });

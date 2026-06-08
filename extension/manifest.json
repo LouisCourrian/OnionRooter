@@ -22,7 +22,8 @@
     "privacy",
     "nativeMessaging",
     "notifications",
-    "webRequestBlocking"
+    "webRequestBlocking",
+    "alarms"
   ],
 
   "host_permissions": ["<all_urls>"],
