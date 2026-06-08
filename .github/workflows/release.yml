@@ -264,16 +264,13 @@ jobs:
         if: env.AMO_JWT_ISSUER == ''
         run: echo "::warning::AMO_JWT_ISSUER/SECRET not set -- skipped AMO submission."
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      # The extension is distributed via AMO, so ext-v* tags do NOT create a
+      # GitHub Release (that would hijack /releases/latest, which should always
+      # point at the latest companion installer). The built XPI is kept as a
+      # workflow artifact for reference only.
+      - name: Upload XPI artifact (reference)
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          prerelease: ${{ needs.meta.outputs.prerelease }}
-          generate_release_notes: true
-          files: |
-            dist/onionrouter-${{ needs.meta.outputs.version }}.xpi
-          body: |
-            Extension v${{ needs.meta.outputs.version }} — install from
-            [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/onionrouter/).
-            The attached XPI is for reference; AMO serves the signed build.
+          name: onionrouter-${{ needs.meta.outputs.version }}-xpi
+          path: dist/onionrouter-${{ needs.meta.outputs.version }}.xpi
+          if-no-files-found: error
