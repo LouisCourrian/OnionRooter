@@ -109,6 +109,8 @@ header h1 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
   justify-content: space-between;
   padding: 3px 0;
 }
+/* author display:flex overrides the UA [hidden] rule, so restore it */
+.details .row[hidden] { display: none; }
 .details .key   { color: var(--muted); }
 .details .value { font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace; }
 .details .value.error { color: var(--danger); max-width: 200px; text-align: right; }
