@@ -3,11 +3,14 @@
 From 1.0.0 onward the companion and the extension are versioned independently
 (`companion-vX.Y.Z`, `ext-vX.Y.Z`); earlier `v0.x` releases shipped both together.
 
-## Extension 1.0.1
+## Extension 1.0.2
 
-- Fix: the unlock page wasn't shown when navigating to a passphrase-protected
-  `.onion` after the background event page had gone idle (the cached index
-  wasn't loaded yet). The interceptor now waits for the index before deciding.
+- Fix: the unlock page for a passphrase-protected `.onion` never appeared.
+  Redirecting a navigation to the extension's `unlock.html` requires it to be
+  declared in `web_accessible_resources` — it wasn't, so Firefox silently
+  refused the redirect. (The earlier 1.0.1 "fix" was incomplete.)
+- The unlock interceptor stays cheap (no companion round-trip in the blocking
+  webRequest listener) so it can't stall `.onion` access.
 
 ## 1.0.0 — first stable
 
