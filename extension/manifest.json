@@ -41,5 +41,12 @@
   "icons": {
     "48": "icons/icon-app.png",
     "128": "icons/icon-app.png"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["unlock.html"],
+      "matches": ["*://*.onion/*"]
+    }
+  ]
 }
