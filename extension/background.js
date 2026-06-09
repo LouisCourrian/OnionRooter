@@ -341,8 +341,10 @@ function onCompanionDisconnect(port) {
     w.reject(disconnectError);
   }
   pendingRequests.clear();
-  // A new companion session starts locked, and protocol info is re-learned.
+  // A new companion session starts locked; re-learn protocol + re-sync the
+  // credential index next time.
   authIndex.unlocked = false;
+  authSynced = false;
   state.companionProtocol = null;
   state.companionVersion = null;
   companionPort = null;
@@ -686,6 +688,30 @@ async function refreshAuthIndex() {
   return r;
 }
 
+let authSynced = false;
+let authSyncInFlight = null;
+
+/**
+ * Sync the index live from the companion at most once per session. The cached
+ * index can be empty (fresh install) or stale relative to the companion, which
+ * would make the unlock interceptor miss a protected service. Bounded so it
+ * never holds a navigation for long.
+ */
+function ensureAuthSynced() {
+  if (authSynced) return Promise.resolve();
+  if (!authSyncInFlight) {
+    authSyncInFlight = refreshAuthIndex()
+      .then((r) => {
+        if (r && r.ok) authSynced = true;
+      })
+      .catch(() => {})
+      .finally(() => {
+        authSyncInFlight = null;
+      });
+  }
+  return Promise.race([authSyncInFlight, new Promise((res) => setTimeout(res, 5000))]);
+}
+
 /** Restore the cached index at startup (no companion spawn). */
 async function loadAuthIndex() {
   try {
@@ -716,13 +742,6 @@ async function sha256Hex(input) {
  * sends the browser back to the original URL (now reachable).
  */
 async function onBeforeOnionRequest(details) {
-  // The event page may have just woken up for THIS request — make sure the
-  // cached index is loaded before deciding whether to redirect.
-  try {
-    await authIndexReady;
-  } catch {
-    /* ignore */
-  }
   let host;
   try {
     host = new URL(details.url).hostname.replace(/\.$/, "").toLowerCase();
@@ -730,17 +749,34 @@ async function onBeforeOnionRequest(details) {
     return {};
   }
   if (!host.endsWith(".onion")) return {};
-  if (authIndex.unlocked) return {};
 
+  // Make sure our view of stored credentials is current before deciding: load
+  // the cache (the event page may have just woken up) and sync once from the
+  // companion (the cache can be empty on a fresh install / new browser).
+  try {
+    await authIndexReady;
+    await ensureAuthSynced();
+  } catch {
+    /* best-effort */
+  }
+
+  const onion = host.slice(0, -".onion".length);
   const protectedEntries = authIndex.entries.filter(
     (e) => e.tier === "passphrase" && e.onion_hash
   );
-  if (protectedEntries.length === 0) return {};
-
-  const onion = host.slice(0, -".onion".length);
   const hash = await sha256Hex(onion);
   const entry = protectedEntries.find((e) => e.onion_hash === hash);
-  if (!entry) return {};
+
+  console.debug("[OnionRouter] onion navigation", {
+    host: host.slice(0, 12) + "…",
+    unlocked: authIndex.unlocked,
+    vaultExists: authIndex.vaultExists,
+    totalEntries: authIndex.entries.length,
+    protectedEntries: protectedEntries.length,
+    matched: !!entry,
+  });
+
+  if (authIndex.unlocked || !entry) return {};
 
   const url =
     browser.runtime.getURL("unlock.html") +
