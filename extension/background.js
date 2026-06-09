@@ -767,7 +767,7 @@ async function onBeforeOnionRequest(details) {
   const hash = await sha256Hex(onion);
   const entry = protectedEntries.find((e) => e.onion_hash === hash);
 
-  console.debug("[OnionRouter] onion navigation", {
+  console.log("[OnionRouter] onion navigation", {
     host: host.slice(0, 12) + "…",
     unlocked: authIndex.unlocked,
     vaultExists: authIndex.vaultExists,
