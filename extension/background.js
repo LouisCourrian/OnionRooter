@@ -289,6 +289,9 @@ function onCompanionMessage(msg) {
         settleReady(msg.port, null);
         cacheCompanionInfo();
         checkForUpdate();
+        // Keep the cached credential index fresh (non-blocking), so the unlock
+        // interceptor sees up-to-date entries on later navigations.
+        refreshAuthIndex().catch(() => {});
       }
       break;
     case "stopped":
@@ -341,10 +344,8 @@ function onCompanionDisconnect(port) {
     w.reject(disconnectError);
   }
   pendingRequests.clear();
-  // A new companion session starts locked; re-learn protocol + re-sync the
-  // credential index next time.
+  // A new companion session starts locked; re-learn protocol next time.
   authIndex.unlocked = false;
-  authSynced = false;
   state.companionProtocol = null;
   state.companionVersion = null;
   companionPort = null;
@@ -688,30 +689,6 @@ async function refreshAuthIndex() {
   return r;
 }
 
-let authSynced = false;
-let authSyncInFlight = null;
-
-/**
- * Sync the index live from the companion at most once per session. The cached
- * index can be empty (fresh install) or stale relative to the companion, which
- * would make the unlock interceptor miss a protected service. Bounded so it
- * never holds a navigation for long.
- */
-function ensureAuthSynced() {
-  if (authSynced) return Promise.resolve();
-  if (!authSyncInFlight) {
-    authSyncInFlight = refreshAuthIndex()
-      .then((r) => {
-        if (r && r.ok) authSynced = true;
-      })
-      .catch(() => {})
-      .finally(() => {
-        authSyncInFlight = null;
-      });
-  }
-  return Promise.race([authSyncInFlight, new Promise((res) => setTimeout(res, 5000))]);
-}
-
 /** Restore the cached index at startup (no companion spawn). */
 async function loadAuthIndex() {
   try {
@@ -750,12 +727,11 @@ async function onBeforeOnionRequest(details) {
   }
   if (!host.endsWith(".onion")) return {};
 
-  // Make sure our view of stored credentials is current before deciding: load
-  // the cache (the event page may have just woken up) and sync once from the
-  // companion (the cache can be empty on a fresh install / new browser).
+  // Make sure the cached index is loaded (the event page may have just woken
+  // up). This is cheap (storage read) -- we must NOT do a companion round-trip
+  // here: this is a blocking listener on every .onion navigation.
   try {
     await authIndexReady;
-    await ensureAuthSynced();
   } catch {
     /* best-effort */
   }
