@@ -32,6 +32,25 @@ OnionRouter has two parts: a **Firefox extension** (the UI) and a small
 
 Then open any `.onion` address — Tor starts automatically.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/popup.png" alt="Toolbar popup"><br>
+      <sub><b>Toolbar popup</b><br>status, routing modes, whitelist</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/diagnostics.png" alt="Diagnostics page"><br>
+      <sub><b>Diagnostics</b><br>companion, Tor backend, versions</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/authorized.png" alt="Authorized services page"><br>
+      <sub><b>Authorized services</b><br>client-auth keys, passphrase vault</sub>
+    </td>
+  </tr>
+</table>
+
 ## Features
 
 - 🧅 **Automatic `.onion` routing** — visit any onion site, Tor spins up on demand.
